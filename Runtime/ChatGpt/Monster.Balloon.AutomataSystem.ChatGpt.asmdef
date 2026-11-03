@@ -1,0 +1,19 @@
+{
+    "name": "Monster.Balloon.AutomataSystem.ChatGpt",
+    "rootNamespace": "Monster.Balloon.AutomataSystem.ChatGpt",
+    "references": [
+        "Monster.Balloon.AutomataSystem"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": false,
+    "defineConstraints": [
+        "!AUTOMATA_SYSTEM_STRIP",
+        "!AUTOMATA_SYSTEM_NO_CHATGPT"
+    ],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

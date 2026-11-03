@@ -47,16 +47,16 @@ Other operating systems: the C# code and the bridge use portable APIs, with thes
 In Unity: **Window > Package Manager > + > Add package from git URL...** and enter:
 
 ```
-https://github.com/234sainsa/automata-system.git#v0.1.0
+https://github.com/234sainsa/automata-system.git#v0.2.0
 ```
 
-The `#v0.1.0` part pins the version, so your project does not change when `main` moves. Leave it off to follow `main`.
+The `#v0.2.0` part pins the version, so your project does not change when `main` moves. Leave it off to follow `main`.
 Or add it to `Packages/manifest.json`:
 
 ```json
 {
   "dependencies": {
-    "monster.balloon.automatasystem": "https://github.com/234sainsa/automata-system.git#v0.1.0"
+    "monster.balloon.automatasystem": "https://github.com/234sainsa/automata-system.git#v0.2.0"
   }
 }
 ```
@@ -241,6 +241,103 @@ and the flag is read at `AfterSceneLoad`, so register them at `AfterAssembliesLo
 Add `Monster.Balloon.AutomataSystem` to the `references` of your game's asmdef (the package assemblies are not auto-referenced).
 The sample in `Samples~/MinimalWorld/` shows the smallest working world.
 
+## Sign in with ChatGPT (optional)
+
+The assembly `Monster.Balloon.AutomataSystem.ChatGpt` (`Runtime/ChatGpt/`) lets a player sign in with their ChatGPT account
+and run an AI inside your game on **their own ChatGPT plan usage**. A conversation (`ChatGptSession`) can call the tools of any
+`IAgentToolHost`, so the same tools you give to an outside AI can be given to an in-game AI.
+
+What it does:
+
+- Sign-in with OAuth 2.0 + PKCE through the system browser and a loopback callback on `http://127.0.0.1:<port>/auth/callback`
+  (port 1455 by default, another free port when it is busy). No client secret and no prior registration: the first sign-in
+  registers this install, and the issued client id is saved and used from then on.
+- The id token is checked (RS256 signature with the issuer's JWKS, `iss`, `aud`, `exp`, `nonce`).
+- Access tokens are refreshed before they expire, one refresh at a time; the rotated refresh token is saved every time.
+- Model list (`ListModelsAsync`, only models with `visibility == "list"`; no model names are built in).
+- Conversations on `/v1/responses` with streaming, function tools, `store: false`, and optional reasoning effort.
+- Errors come back as `ChatGptException` with a `ChatGptErrorKind` (`UsageLimit`, `NotEligible`, `Unauthorized`,
+  `Unavailable`, `Unsupported`, `Interrupted`, `Network`, `Cancelled`, ...).
+
+### Who may use it
+
+From OpenAI's documentation: "ChatGPT plan usage is available to open-source projects, personal projects that run locally,
+and selected private apps." Paid apps, apps that run on a server, and apps whose source is not public must apply at
+<https://openai.com/form/sign-in-with-chatgpt-interest/> and ship it only after they are selected.
+
+**If your game is not open source**, add the scripting define symbol `AUTOMATA_SYSTEM_NO_CHATGPT` to your release builds
+until your application is accepted. The define removes the whole ChatGPT assembly from the build
+(`AUTOMATA_SYSTEM_STRIP` removes it too).
+
+### Smallest use
+
+Add `Monster.Balloon.AutomataSystem` and `Monster.Balloon.AutomataSystem.ChatGpt` to your asmdef `references`.
+
+```csharp
+using Monster.Balloon.AutomataSystem.ChatGpt;
+
+// Create on the main thread when StorageDirectory is left null (it reads Application.persistentDataPath).
+var account = new ChatGptAccount(new ChatGptSettings("My Game"));
+
+// "Continue with ChatGPT" button: opens the browser and waits for the player.
+ChatGptAccountState state = await account.SignInAsync();
+if (state == ChatGptAccountState.PlanNotGranted)
+{
+    state = await account.SignInAsync(requestPlanConsent: true); // ask for plan consent again (prompt=consent)
+}
+
+if (account.TakePlanNotice()) { /* show "You're using your ChatGPT plan" once */ }
+
+IReadOnlyList<ChatGptModelInfo> models = await account.ListModelsAsync();
+var session = new ChatGptSession(account, models[0].Slug, "You are a shopkeeper in this game.", myToolHost);
+
+try
+{
+    ChatGptTurnResult turn = await session.RunTurnAsync("Hello!", e =>
+    {
+        // Called on a worker thread: TextDelta, ToolCall, ToolResult, TurnEnd.
+    });
+    Debug.Log(turn.Text);
+}
+catch (ChatGptException e) when (e.Kind == ChatGptErrorKind.UsageLimit)
+{
+    // Make "Manage usage" (e.ActionUrl) the main action. Do not guess when the limit resets.
+}
+
+await account.SignOutAsync(); // revokes the refresh token and forgets the tokens
+```
+
+Notes:
+
+- Every method may be called from any thread and does not block the main thread. Events (`StateChanged`, turn events)
+  arrive on worker threads; move to the main thread before touching Unity objects.
+- `ChatGptSettings.OpenBrowser` opens the page with `Application.OpenURL` on the main thread. Replace it, or set it to `null`
+  and show `ChatGptSignIn.AuthorizeUrl` yourself (from `BeginSignInAsync`).
+- One turn sends at most `MaxRequestsPerTurn` requests (24 by default). A failed turn is not kept in the conversation,
+  so the same words can be sent again.
+- If the server refuses `include: ["reasoning.encrypted_content"]`, the session turns `CarryReasoning` off,
+  drops reasoning items, and sends the request once more.
+
+### How to show it
+
+The package has no UI. Follow these rules in yours:
+
+- The sign-in button says **"Continue with ChatGPT"**.
+- After the first sign-in, show **"You're using your ChatGPT plan"** once (`TakePlanNotice()` returns true one time).
+- While it is in use, show **"Using ChatGPT plan"** and a **"Manage usage"** link to <https://chatgpt.com/settings/usage>
+  (`ChatGptSettings.ManageUsageUrl`).
+- On `UsageLimit`, make **Manage usage** the main action. On `NotEligible`, do not ask the player to sign in again.
+
+### What is saved, and where
+
+One file, `account.json`, in `Application.persistentDataPath/AutomataSystem/ChatGpt/` by default
+(`ChatGptSettings.StorageDirectory` changes it). It is written to a temporary file first and then swapped in.
+
+It holds: a random install id (`ext_agent_host_id`, `urn:uuid:...`), the issued client id, the access and refresh tokens,
+the granted scope, the expiry times, the account `sub`, and the plan type. It does **not** hold the id token, an email address,
+or a name. Tokens are never written to logs or exception messages. Signing out removes the tokens and keeps the install id and
+the client id.
+
 ## Safety
 
 - **Release builds have no endpoint.** The HTTP assembly (`Monster.Balloon.AutomataSystem.Http`) compiles only with
@@ -264,6 +361,8 @@ The sample in `Samples~/MinimalWorld/` shows the smallest working world.
 | `Http/` | `Monster.Balloon.AutomataSystem.Http` | The local HTTP endpoint (own `Socket`; Editor and development builds only) |
 | `Editor/` | `Monster.Balloon.AutomataSystem.Editor` | The `Tools/Agent API` menu, Game view size, back-tool screen recorder |
 | `Tests/Editor/` | `Monster.Balloon.AutomataSystem.Tests` | Tests for the gate, the ledger and the flag |
+| `Runtime/ChatGpt/` | `Monster.Balloon.AutomataSystem.ChatGpt` | Sign in with ChatGPT and conversations on the player's plan (optional) |
+| `Tests/Editor/ChatGpt/` | `Monster.Balloon.AutomataSystem.ChatGpt.Tests` | Tests against a fake OpenAI server |
 | `Samples~/MinimalWorld/` | `Monster.Balloon.AutomataSystem.Samples.MinimalWorld` | The sample (imported from the Package Manager) |
 | `Tools~/Bridge/` | (Python) | The MCP bridge, its self-test and `examples/tools.json` |
 

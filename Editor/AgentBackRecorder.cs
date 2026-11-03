@@ -169,7 +169,9 @@ namespace Monster.Balloon.AutomataSystem.Editor
 
             recordedSeconds += Math.Max(0, step);
 
-            if (segment.Frames >= SegmentSeconds * AgentRecordingSegment.FramesPerSecond || !segment.Matches(Screen.width, Screen.height))
+            // ⚠ ここ（Editor の update）で Screen の大きさを読まない＝前にある別の窓の大きさになることがある（AgentRecordingSegment の説明・2026-11-03）。
+            //    大きさの違いは、フレームの終わりに撮る係が見つけて SizeChanged で知らせる。
+            if (segment.Frames >= SegmentSeconds * AgentRecordingSegment.FramesPerSecond || segment.SizeChanged)
             {
                 // 長さが上限に来た・Game の画面の大きさが変わった＝次の 1 本に替える。
                 Stop();
@@ -193,6 +195,7 @@ namespace Monster.Balloon.AutomataSystem.Editor
             nextShotAt = Math.Max(nextShotAt + 1.0 / AgentRecordingSegment.FramesPerSecond, now);
             shotPending = true;
             shotRequestedAt = now;
+            segment.NoteRequested();
             AgentRecordingSegment target = segment;
             int slot = (int)(recordedSeconds * AgentRecordingSegment.FramesPerSecond);
             runner.AtEndOfFrame(() => Shoot(target, slot));
@@ -218,19 +221,14 @@ namespace Monster.Balloon.AutomataSystem.Editor
 
         private static void Start()
         {
-            int width = Screen.width;
-            int height = Screen.height;
-            if (width < 2 || height < 2)
-            {
-                return;
-            }
-
             try
             {
                 Directory.CreateDirectory(Folder);
                 Prune();
                 string name = DateTime.Now.ToString("yyyyMMdd-HHmmss") + "_" + seenPlayId + "_" + EditorName + ".mp4";
-                segment = new AgentRecordingSegment(Path.Combine(Folder, name), width, height);
+
+                // ⭐ MP4 のファイルと画面の大きさは、最初の絵を撮る時（フレームの終わり）に決まる。
+                segment = new AgentRecordingSegment(Path.Combine(Folder, name));
                 nextShotAt = EditorApplication.timeSinceStartup;
                 lastTickAt = nextShotAt;
                 recordedSeconds = 0;
@@ -260,6 +258,12 @@ namespace Monster.Balloon.AutomataSystem.Editor
             catch (Exception e)
             {
                 Debug.LogWarning("[AgentRecorder] 録画を閉じられませんでした: " + e.Message);
+            }
+
+            // ⭐ 絵が 1 枚も無いまま閉じた＝撮れなかった訳の数を黄 1 行で出す（2026-11-03・人間用 Editor の 0 バイトの MP4 の見分け）。
+            if (closing.Frames == 0 && closing.RequestedCount > 0)
+            {
+                Debug.LogWarning("[AgentRecorder] 絵が 1 枚も撮れないまま 1 本を閉じました: " + closing.Describe());
             }
         }
 

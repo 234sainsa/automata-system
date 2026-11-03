@@ -2,6 +2,28 @@
 
 All notable changes to this package are written here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.2.0] - 2026-11-04
+
+### Added
+
+- Optional assembly `Monster.Balloon.AutomataSystem.ChatGpt` (`Runtime/ChatGpt/`): Sign in with ChatGPT, so an in-game AI
+  can run on the player's own ChatGPT plan usage.
+  - `ChatGptAccount`: sign-in through the browser with PKCE and a loopback callback on `127.0.0.1`
+    (first sign-in registers the install and saves the issued client id), id token checks (RS256, `iss`, `aud`, `exp`, `nonce`),
+    token refresh one at a time with the rotated refresh token saved, sign-out with revoke, the model list, and the state
+    (`SignedOut`, `SigningIn`, `SignedIn`, `PlanNotGranted`).
+  - `ChatGptSession`: a conversation on `/v1/responses` (streaming, `store: false`, function tools from any `IAgentToolHost`,
+    optional reasoning effort, encrypted reasoning carried between requests with a one-time fallback when it is refused).
+  - `ChatGptException` with `ChatGptErrorKind` for usage limits, eligibility, sign-in, network and stream failures.
+  - The define `AUTOMATA_SYSTEM_NO_CHATGPT` removes the assembly (for closed-source games until their application is accepted).
+- Tests for the ChatGPT assembly against a fake OpenAI server (`Tests/Editor/ChatGpt/`).
+
+### Fixed
+
+- Recording (Editor): each MP4 segment now opens at its first captured frame and takes the screen size from that frame,
+  so segments are no longer left as 0-byte files when another window was in front. A segment closed with no frames logs
+  one warning with the reasons it could not capture.
+
 ## [0.1.0] - 2026-11-03
 
 First public release of AUTOMATA SYSTEM — Game Agent API for Unity (`monster.balloon.automatasystem`).

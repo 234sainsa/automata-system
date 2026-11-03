@@ -47,16 +47,16 @@ AI（たとえば MCP でつないだ Claude）が、動いている Unity の�
 Unity で **Window > Package Manager > + > Add package from git URL...** を開き、次を入れます。
 
 ```
-https://github.com/234sainsa/automata-system.git#v0.1.0
+https://github.com/234sainsa/automata-system.git#v0.2.0
 ```
 
-終わりの `#v0.1.0` で版を決めます。こうすると、`main` が変わっても、あなたのプロジェクトの中身は変わりません。`main` に付いていきたい時は、`#v0.1.0` を外します。
+終わりの `#v0.2.0` で版を決めます。こうすると、`main` が変わっても、あなたのプロジェクトの中身は変わりません。`main` に付いていきたい時は、`#v0.2.0` を外します。
 `Packages/manifest.json` に書いても入ります。
 
 ```json
 {
   "dependencies": {
-    "monster.balloon.automatasystem": "https://github.com/234sainsa/automata-system.git#v0.1.0"
+    "monster.balloon.automatasystem": "https://github.com/234sainsa/automata-system.git#v0.2.0"
   }
 }
 ```
@@ -241,6 +241,101 @@ AI は様子を見てから、掛け金を外します（`reflex/ack`）。赤�
 ゲームの asmdef の `references` に `Monster.Balloon.AutomataSystem` を足します（パッケージのアセンブリは自動では参照されません）。
 いちばん小さい、動く世界は `Samples~/MinimalWorld/` の見本にあります。
 
+## Sign in with ChatGPT（任意）
+
+アセンブリ `Monster.Balloon.AutomataSystem.ChatGpt`（`Runtime/ChatGpt/`）を使うと、遊ぶ人が自分の ChatGPT のアカウントで
+ログインし、**遊ぶ人の ChatGPT のプランの使える量**で、ゲームの中の AI を動かせます。会話（`ChatGptSession`）は
+`IAgentToolHost` の道具を呼べます。外の AI に渡す道具を、そのままゲームの中の AI にも渡せます。
+
+何ができるか:
+
+- ログイン＝OAuth 2.0 と PKCE。遊ぶ人のブラウザで行い、戻りは `http://127.0.0.1:<port>/auth/callback` で受けます
+  （port は既定 1455・塞がっていれば空いた port）。client secret も、前もっての登録も要りません。初回のログインで
+  この端末が登録され、発行された client_id を保存して、以後はそれを使います。
+- ID トークンを確かめます（発行元の JWKS による RS256 の署名・`iss`・`aud`・`exp`・`nonce`）。
+- アクセストークンは、期限の前に refresh します。refresh は 1 本ずつに並べ、替わった refresh_token を毎回保存します。
+- モデル一覧（`ListModelsAsync`・`visibility == "list"` の物だけ。モデルの名前は決め打ちしません）。
+- `/v1/responses` での会話（流れ・function tools・`store: false`・考える深さは任意）。
+- 失敗は `ChatGptException` で返ります。訳の印は `ChatGptErrorKind`（`UsageLimit`・`NotEligible`・`Unauthorized`・
+  `Unavailable`・`Unsupported`・`Interrupted`・`Network`・`Cancelled` など）です。
+
+### 使える相手
+
+OpenAI の説明書から: 「ChatGPT plan usage is available to open-source projects, personal projects that run locally,
+and selected private apps.」 有料のアプリ・サーバーで動くアプリ・中身を公開しないアプリは、
+<https://openai.com/form/sign-in-with-chatgpt-interest/> で申し込み、選ばれてから出します。
+
+**ゲームの中身を公開しない場合**は、申し込みが通るまで、製品のビルドの Scripting Define Symbols に
+`AUTOMATA_SYSTEM_NO_CHATGPT` を入れます。この define で、ChatGPT のアセンブリが丸ごとビルドから外れます
+（`AUTOMATA_SYSTEM_STRIP` でも外れます）。
+
+### いちばん小さい使い方
+
+asmdef の `references` に `Monster.Balloon.AutomataSystem` と `Monster.Balloon.AutomataSystem.ChatGpt` を足します。
+
+```csharp
+using Monster.Balloon.AutomataSystem.ChatGpt;
+
+// StorageDirectory を決めない時は、主スレッドで作る（Application.persistentDataPath を読むため）。
+var account = new ChatGptAccount(new ChatGptSettings("My Game"));
+
+// 「Continue with ChatGPT」のボタン: ブラウザを開き、遊ぶ人がログインを済ませるまで待つ。
+ChatGptAccountState state = await account.SignInAsync();
+if (state == ChatGptAccountState.PlanNotGranted)
+{
+    state = await account.SignInAsync(requestPlanConsent: true); // プランの同意を取り直す（prompt=consent）
+}
+
+if (account.TakePlanNotice()) { /* 「You're using your ChatGPT plan」を 1 回出す */ }
+
+IReadOnlyList<ChatGptModelInfo> models = await account.ListModelsAsync();
+var session = new ChatGptSession(account, models[0].Slug, "You are a shopkeeper in this game.", myToolHost);
+
+try
+{
+    ChatGptTurnResult turn = await session.RunTurnAsync("Hello!", e =>
+    {
+        // 主スレッドでないスレッドで呼ばれる: TextDelta・ToolCall・ToolResult・TurnEnd。
+    });
+    Debug.Log(turn.Text);
+}
+catch (ChatGptException e) when (e.Kind == ChatGptErrorKind.UsageLimit)
+{
+    // 「Manage usage」（e.ActionUrl）を主な行動にする。使えるようになる時刻は推し量らない。
+}
+
+await account.SignOutAsync(); // refresh_token を取り消して、トークンを消す
+```
+
+注意:
+
+- どのメソッドも、どのスレッドから呼んでもよく、主スレッドを止めません。知らせ（`StateChanged`・番の出来事）は
+  主スレッドでないスレッドで来ます。Unity の物に触る前に、主スレッドへ移します。
+- `ChatGptSettings.OpenBrowser` は、主スレッドで `Application.OpenURL` を呼んで頁を開きます。差し替えるか、`null` にして
+  `ChatGptSignIn.AuthorizeUrl`（`BeginSignInAsync` の返り）を自分で見せます。
+- 1 つの番で頼むのは `MaxRequestsPerTurn` 回まで（既定 24）です。失敗した番は会話に残らないので、同じ言葉で送り直せます。
+- サーバーが `include: ["reasoning.encrypted_content"]` を断ったら、会話は `CarryReasoning` を切り、考えの項目を落として、
+  1 回だけ送り直します。
+
+### 見せ方
+
+パッケージは UI を持ちません。ゲームの UI で、次の決まりを守ります。
+
+- ログインのボタンの字は **「Continue with ChatGPT」**。
+- 初回のログインの後に **「You're using your ChatGPT plan」** を 1 回出します（`TakePlanNotice()` が 1 回だけ true を返します）。
+- 使っている間は **「Using ChatGPT plan」** と、<https://chatgpt.com/settings/usage> への **「Manage usage」** を出します
+  （`ChatGptSettings.ManageUsageUrl`）。
+- `UsageLimit` の時は **Manage usage** を主な行動にします。`NotEligible` の時は、ログインし直しを求めません。
+
+### 保存する物と場所
+
+ファイルは `account.json` の 1 つです。場所は既定で `Application.persistentDataPath/AutomataSystem/ChatGpt/`
+（`ChatGptSettings.StorageDirectory` で変えられます）。一時ファイルに書いてから置き換えます。
+
+中身: 乱数の端末の印（`ext_agent_host_id`・`urn:uuid:...`）・発行された client_id・アクセストークンと refresh_token・
+許された scope・期限・アカウントの `sub`・プランの種類。ID トークン・メールアドレス・名前は**持ちません**。
+トークンはログにも例外の字にも出しません。ログアウトするとトークンを消し、端末の印と client_id は残します。
+
 ## 安全
 
 - **製品のビルドには窓口がありません。** HTTP のアセンブリ（`Monster.Balloon.AutomataSystem.Http`）は
@@ -264,6 +359,8 @@ AI は様子を見てから、掛け金を外します（`reflex/ack`）。赤�
 | `Http/` | `Monster.Balloon.AutomataSystem.Http` | ローカルの HTTP の窓口（自前の `Socket`・Editor と開発ビルドだけ） |
 | `Editor/` | `Monster.Balloon.AutomataSystem.Editor` | `Tools/Agent API` のメニュー・Game の窓の大きさ・裏の道具を使った間の録画 |
 | `Tests/Editor/` | `Monster.Balloon.AutomataSystem.Tests` | 門・帳面・開く印のテスト |
+| `Runtime/ChatGpt/` | `Monster.Balloon.AutomataSystem.ChatGpt` | Sign in with ChatGPT と、遊ぶ人のプランでの会話（任意） |
+| `Tests/Editor/ChatGpt/` | `Monster.Balloon.AutomataSystem.ChatGpt.Tests` | 偽の OpenAI のサーバーを相手にしたテスト |
 | `Samples~/MinimalWorld/` | `Monster.Balloon.AutomataSystem.Samples.MinimalWorld` | 見本（Package Manager から入れます） |
 | `Tools~/Bridge/` | （Python） | MCP の橋・橋の自己試験・`examples/tools.json` |
 

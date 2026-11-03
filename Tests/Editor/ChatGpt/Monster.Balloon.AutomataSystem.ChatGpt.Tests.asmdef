@@ -1,0 +1,28 @@
+{
+    "name": "Monster.Balloon.AutomataSystem.ChatGpt.Tests",
+    "rootNamespace": "Monster.Balloon.AutomataSystem.ChatGpt.Tests",
+    "references": [
+        "Monster.Balloon.AutomataSystem",
+        "Monster.Balloon.AutomataSystem.ChatGpt",
+        "UnityEngine.TestRunner",
+        "UnityEditor.TestRunner"
+    ],
+    "includePlatforms": [
+        "Editor"
+    ],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": true,
+    "precompiledReferences": [
+        "nunit.framework.dll",
+        "Newtonsoft.Json.dll"
+    ],
+    "autoReferenced": false,
+    "defineConstraints": [
+        "UNITY_INCLUDE_TESTS",
+        "!AUTOMATA_SYSTEM_STRIP",
+        "!AUTOMATA_SYSTEM_NO_CHATGPT"
+    ],
+    "versionDefines": [],
+    "noEngineReferences": false
+}
