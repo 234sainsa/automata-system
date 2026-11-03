@@ -1,0 +1,20 @@
+{
+    "name": "Monster.Balloon.AutomataSystem.Editor",
+    "rootNamespace": "Monster.Balloon.AutomataSystem.Editor",
+    "references": [
+        "Monster.Balloon.AutomataSystem"
+    ],
+    "includePlatforms": [
+        "Editor"
+    ],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": false,
+    "defineConstraints": [
+        "!AUTOMATA_SYSTEM_STRIP"
+    ],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

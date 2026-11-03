@@ -1,0 +1,185 @@
+{
+  "server": {
+    "name": "agent-api-test",
+    "title": "Game Agent API (bridge self-test)"
+  },
+  "profiles": {
+    "main": {
+      "instructions": [
+        "Self-test table. Call agent_hello first. ",
+        "It also shows every handler the bridge has: wait, reflex, act, capture and log."
+      ],
+      "tools": [
+        {
+          "name": "agent_hello",
+          "route": "hello",
+          "face": "surface",
+          "title": "Hello",
+          "description": "Version, open abilities, world state, routes and signal names.",
+          "inputSchema": {"type": "object", "properties": {}, "additionalProperties": false}
+        },
+        {
+          "name": "agent_look",
+          "route": "look",
+          "face": "surface",
+          "title": "Look (surface)",
+          "description": "What the player can see now.",
+          "inputSchema": {"type": "object", "properties": {"sections": {"type": "array", "items": {"type": "string"}}},
+                          "additionalProperties": false}
+        },
+        {
+          "name": "agent_events",
+          "route": "events",
+          "face": "surface",
+          "title": "Events (surface)",
+          "description": "Surface signals after a cursor.",
+          "inputSchema": {"type": "object", "properties": {"after": {"type": "string"},
+                                                           "max": {"type": "integer", "minimum": 1, "maximum": 500}},
+                          "additionalProperties": false}
+        },
+        {
+          "name": "agent_wait",
+          "route": "wait",
+          "handler": "wait",
+          "face": "surface",
+          "title": "Wait (surface)",
+          "description": "Waits until one of the signals in until happens (up to 300 seconds; the bridge re-waits in 25 second steps).",
+          "inputSchema": {"type": "object", "properties": {
+            "until": {"type": "array", "maxItems": 16, "items": {"anyOf": [{"type": "string"},
+                      {"type": "object", "properties": {"kind": {"type": "string"}}, "required": ["kind"]}]}},
+            "after": {"type": "string"},
+            "timeoutSec": {"type": "integer", "minimum": 0, "maximum": 300}}, "additionalProperties": false}
+        },
+        {
+          "name": "agent_reflex",
+          "handler": "reflex",
+          "face": "surface",
+          "title": "Stop reflex and pause",
+          "description": "arm / ack the stop reflex, or pause / resume / step the game.",
+          "inputSchema": {"type": "object", "required": ["do"], "properties": {
+            "do": {"type": "string", "enum": ["arm", "ack", "pause", "resume", "step"]},
+            "minutes": {"type": "integer", "minimum": 0, "maximum": 120},
+            "stopBefore": {"type": ["string", "null"]},
+            "modes": {"type": ["array", "null"], "items": {"type": "string"}},
+            "ignore": {"type": ["array", "null"], "items": {"type": "string"}},
+            "resume": {"type": "boolean"},
+            "frames": {"type": "integer", "minimum": 1, "maximum": 120}}, "additionalProperties": false},
+          "annotations": {"readOnlyHint": false, "destructiveHint": false, "idempotentHint": false, "openWorldHint": false}
+        },
+        {
+          "name": "agent_act",
+          "handler": "act",
+          "face": "surface",
+          "title": "Act (hands)",
+          "description": "Runs one command (do, args, ref) or a sequence (seq) with the player's own inputs. do lease borrows or releases the hands.",
+          "inputSchema": {"type": "object", "properties": {
+            "do": {"type": "string"},
+            "args": {"type": "object"},
+            "ref": {"type": "string"},
+            "release": {"type": "boolean"},
+            "seq": {"type": "array", "minItems": 1, "maxItems": 8, "items": {"type": "object", "required": ["do"],
+                    "properties": {"do": {"type": "string"}, "args": {"type": "object"}, "ref": {"type": "string"}}}},
+            "keepGoing": {"type": "boolean"}}, "additionalProperties": false},
+          "annotations": {"readOnlyHint": false, "destructiveHint": false, "idempotentHint": false, "openWorldHint": false}
+        },
+        {
+          "name": "agent_capture",
+          "handler": "capture",
+          "face": "surface",
+          "title": "Capture the screen",
+          "description": "Saves a screenshot and returns its file with a look of the same frame.",
+          "inputSchema": {"type": "object", "properties": {
+            "sections": {"type": "array", "items": {"type": "string"}},
+            "measure": {"type": "boolean"},
+            "hideDebugOverlays": {"type": "boolean"},
+            "form": {"type": "string", "enum": ["portrait", "landscape", "both"]},
+            "settleSec": {"type": "number", "minimum": 0, "maximum": 5}}, "additionalProperties": false},
+          "annotations": {"readOnlyHint": false, "destructiveHint": false, "idempotentHint": false, "openWorldHint": false}
+        },
+        {
+          "name": "agent_back_look",
+          "route": "back/look",
+          "face": "back",
+          "title": "Look (back)",
+          "description": "Example of a game back route passed through as is.",
+          "inputSchema": {"type": "object"}
+        },
+        {
+          "name": "agent_back_entity",
+          "route": "back/entity",
+          "face": "back",
+          "title": "Entity (back)",
+          "description": "Example of a game back route passed through as is.",
+          "inputSchema": {"type": "object", "required": ["id"], "properties": {"id": {"type": "string"}}}
+        },
+        {
+          "name": "agent_back_events",
+          "route": "back/events",
+          "face": "back",
+          "title": "Events (back)",
+          "description": "Back signals after a cursor.",
+          "inputSchema": {"type": "object", "properties": {"after": {"type": "string"},
+                                                           "max": {"type": "integer", "minimum": 1, "maximum": 500}},
+                          "additionalProperties": false}
+        },
+        {
+          "name": "agent_back_wait",
+          "route": "back/wait",
+          "handler": "wait",
+          "face": "back",
+          "title": "Wait (back)",
+          "description": "Same as agent_wait on the back ledger.",
+          "inputSchema": {"type": "object", "properties": {
+            "until": {"type": "array", "maxItems": 16, "items": {"anyOf": [{"type": "string"},
+                      {"type": "object", "properties": {"kind": {"type": "string"}}, "required": ["kind"]}]}},
+            "after": {"type": "string"},
+            "timeoutSec": {"type": "integer", "minimum": 0, "maximum": 300}}, "additionalProperties": false}
+        },
+        {
+          "name": "agent_back_log",
+          "handler": "log",
+          "face": "back",
+          "title": "Game log lines (back)",
+          "description": "Reads lines of the game's own log files that contain one of the tags. The log layout comes from a plugin (log_layout).",
+          "inputSchema": {"type": "object", "required": ["tags"], "properties": {
+            "tags": {"type": "array", "items": {"type": "string", "minLength": 1}, "minItems": 1, "maxItems": 16},
+            "has": {"type": "string", "minLength": 1},
+            "after": {"type": "string"},
+            "last": {"type": "integer", "minimum": 1, "maximum": 200},
+            "max": {"type": "integer", "minimum": 1, "maximum": 500},
+            "waitSec": {"type": "integer", "minimum": 0, "maximum": 300},
+            "ids": {"type": "boolean"}}, "additionalProperties": false}
+        },
+        {
+          "name": "agent_back_keep_alive",
+          "route": "back/keep_alive",
+          "face": "back",
+          "title": "Keep alive (back)",
+          "description": "Example of a game back route that changes the world.",
+          "inputSchema": {"type": "object", "properties": {"on": {"type": "boolean"}}, "additionalProperties": false},
+          "annotations": {"readOnlyHint": false, "destructiveHint": false, "idempotentHint": true, "openWorldHint": false}
+        },
+        {
+          "name": "agent_back_command",
+          "route": "back/command",
+          "face": "back",
+          "title": "Debug command (back)",
+          "description": "Example of a game back route that changes the world.",
+          "inputSchema": {"type": "object", "required": ["line"], "properties": {"line": {"type": "string"}},
+                          "additionalProperties": false},
+          "annotations": {"readOnlyHint": false, "destructiveHint": false, "idempotentHint": false, "openWorldHint": false}
+        },
+        {
+          "name": "agent_back_shot",
+          "route": "back/shot",
+          "face": "back",
+          "title": "Shot from a temporary camera (back)",
+          "description": "Example of a game back route that changes the world.",
+          "inputSchema": {"type": "object", "required": ["at"], "properties": {"at": {"type": ["string", "array"]},
+                                                                                "dist": {"type": "number"}}},
+          "annotations": {"readOnlyHint": false, "destructiveHint": false, "idempotentHint": false, "openWorldHint": false}
+        }
+      ]
+    }
+  }
+}

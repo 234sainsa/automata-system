@@ -1,0 +1,3 @@
+# Unity の外で動く道具（Python・bash・json）は、書いたときの LF のまま置く。
+# ⚠ このリポジトリは core.autocrlf=true＝指定しないと CRLF で書き出され、bash の .sh が「$'\r': command not found」で動かなくなる。
+Tools~/** text eol=lf

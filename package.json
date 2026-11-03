@@ -1,0 +1,39 @@
+{
+  "name": "monster.balloon.automatasystem",
+  "version": "0.1.0",
+  "displayName": "AUTOMATA SYSTEM — Game Agent API for Unity",
+  "description": "Lets an AI agent (such as Claude via MCP) read a running Unity game the way a player sees it, and play it with the same inputs. Provides the local endpoint, access gate, event ledger, screen capture and safety reflexes; each game registers its own views and commands through interfaces. Game-agnostic.",
+  "unity": "6000.3",
+  "documentationUrl": "https://github.com/234sainsa/automata-system#readme",
+  "changelogUrl": "https://github.com/234sainsa/automata-system/blob/main/CHANGELOG.md",
+  "licensesUrl": "https://github.com/234sainsa/automata-system/blob/main/LICENSE.md",
+  "dependencies": {
+    "com.unity.nuget.newtonsoft-json": "3.2.2"
+  },
+  "keywords": [
+    "ai",
+    "agent",
+    "mcp",
+    "llm",
+    "automation",
+    "testing",
+    "claude",
+    "game-agent"
+  ],
+  "author": {
+    "name": "balloon.monster",
+    "url": "https://balloon.monster"
+  },
+  "license": "MIT",
+  "samples": [
+    {
+      "displayName": "Minimal World",
+      "description": "The smallest integration: one IAgentWorld with a surface look route (scene name, camera name, objects in view). Import it, open the API from Tools/Agent API, enter Play, and hello and look answer in any scene.",
+      "path": "Samples~/MinimalWorld"
+    }
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/234sainsa/automata-system.git"
+  }
+}

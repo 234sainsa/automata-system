@@ -1,0 +1,26 @@
+{
+    "name": "Monster.Balloon.AutomataSystem.Tests",
+    "rootNamespace": "Monster.Balloon.AutomataSystem.Tests",
+    "references": [
+        "Monster.Balloon.AutomataSystem",
+        "UnityEngine.TestRunner",
+        "UnityEditor.TestRunner"
+    ],
+    "includePlatforms": [
+        "Editor"
+    ],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": true,
+    "precompiledReferences": [
+        "nunit.framework.dll",
+        "Newtonsoft.Json.dll"
+    ],
+    "autoReferenced": false,
+    "defineConstraints": [
+        "UNITY_INCLUDE_TESTS",
+        "!AUTOMATA_SYSTEM_STRIP"
+    ],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

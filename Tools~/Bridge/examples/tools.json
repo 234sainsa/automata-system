@@ -1,0 +1,43 @@
+{
+  "server": {
+    "name": "game-agent-api",
+    "title": "Game Agent API (Minimal World sample)"
+  },
+  "profiles": {
+    "main": {
+      "instructions": [
+        "Reads a running Unity game the way a player sees it. ",
+        "The game answers only while the Unity Editor is in Play Mode with the Agent API opened from the menu Tools/Agent API ",
+        "(otherwise the tools return no_endpoint or connect). ",
+        "Call game_hello once first to see which abilities are open, the state of the world and the routes. ",
+        "Then call game_look to read what is on screen."
+      ],
+      "tools": [
+        {
+          "name": "game_hello",
+          "route": "hello",
+          "face": "surface",
+          "title": "Say hello to the game",
+          "description": [
+            "Returns the API version, how the endpoint was opened (open, abilities), the state of the world ",
+            "(world.state: none, loading, ready or closing), the routes you may call and the signal names. ",
+            "Call this once first."
+          ],
+          "inputSchema": {"type": "object", "properties": {}, "additionalProperties": false}
+        },
+        {
+          "name": "game_look",
+          "route": "look",
+          "face": "surface",
+          "title": "Look at the screen",
+          "description": [
+            "Returns what the player can see right now: the active scene name, the camera name, ",
+            "and up to 8 objects inside the camera view, nearest first, each with a direction word ",
+            "(left, center, right) and a distance word (near, mid, far). No coordinates."
+          ],
+          "inputSchema": {"type": "object", "properties": {}, "additionalProperties": false}
+        }
+      ]
+    }
+  }
+}

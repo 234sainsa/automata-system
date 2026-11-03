@@ -1,0 +1,19 @@
+{
+    "name": "Monster.Balloon.AutomataSystem.Http",
+    "rootNamespace": "Monster.Balloon.AutomataSystem.Http",
+    "references": [
+        "Monster.Balloon.AutomataSystem"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": false,
+    "defineConstraints": [
+        "UNITY_EDITOR || DEVELOPMENT_BUILD",
+        "!AUTOMATA_SYSTEM_STRIP"
+    ],
+    "versionDefines": [],
+    "noEngineReferences": false
+}
