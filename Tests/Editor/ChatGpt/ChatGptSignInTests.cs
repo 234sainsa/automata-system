@@ -81,12 +81,14 @@ namespace Monster.Balloon.AutomataSystem.ChatGpt.Tests
 
                 Assert.That(account.TakePlanNotice(), Is.True);
                 Assert.That(account.TakePlanNotice(), Is.False);
+                Assert.That(this.server.Refusals, Is.Empty);
             }
         }
 
         /// <summary>
         /// Test: the second sign-in uses the issued client id and sends no agent_name_hint.
         /// 2 回目は発行済みの client_id を使い、agent_name_hint を付けない。端末の印は同じ。
+        /// 偽のサーバーは 2 回目の戻りに client_id を付けない（説明書＝付かないことがある）＝頼んだ client_id のまま交換する。
         /// </summary>
         [Test]
         public void SecondSignIn_UsesIssuedClientId_WithoutNameHint()
@@ -107,7 +109,9 @@ namespace Monster.Balloon.AutomataSystem.ChatGpt.Tests
                 Assert.That(second.ContainsKey("agent_name_hint"), Is.False);
                 Assert.That(second.ContainsKey("id_token_hint"), Is.False);
                 Assert.That(second["ext_agent_host_id"], Is.EqualTo(first["ext_agent_host_id"]));
+                Assert.That(this.server.TokenForms[1]["client_id"], Is.EqualTo(FakeOpenAi.IssuedClientId));
                 Assert.That(again.TakePlanNotice(), Is.False);
+                Assert.That(this.server.Refusals, Is.Empty);
             }
         }
 
@@ -210,7 +214,8 @@ namespace Monster.Balloon.AutomataSystem.ChatGpt.Tests
 
                 JObject saved = ReadSaved(this.folder);
                 Assert.That(saved.Value<string>("refresh_token"), Is.EqualTo("refresh-2"));
-                Assert.That(saved.Value<string>("scope"), Is.EqualTo(FakeOpenAi.FullScope));
+                Assert.That(saved.Value<string>("scope"), Is.EqualTo(FakeOpenAi.FullScope), "refresh の返りに scope が無い＝前の scope を保つ");
+                Assert.That(this.server.Refusals, Is.Empty);
             }
         }
 

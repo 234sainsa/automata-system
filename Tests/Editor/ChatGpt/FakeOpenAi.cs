@@ -6,6 +6,7 @@ using System.Net;
 using System.Net.Sockets;
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
@@ -13,23 +14,31 @@ using Newtonsoft.Json.Linq;
 namespace Monster.Balloon.AutomataSystem.ChatGpt.Tests
 {
     /// <summary>
-    /// Fake OpenAI sign-in and API server for tests.
+    /// Fake OpenAI sign-in and API server for tests, strict about the published rules.
     /// テスト用の偽の OpenAI（discovery・jwks・authorize・token・revoke・models・responses）。127.0.0.1 の空いた port で待つ。
     /// <para>
-    /// ⭐ authorize は、テストがブラウザの代わりに GET する。偽のサーバーは redirect_uri へ 302 で code・state・client_id を返す。
-    /// ⭐ 届いた頼みは全部覚える（テストが中身を確かめる）。
+    /// ⭐ 決まりは OpenAI の説明書（developers.openai.com/siwc/token-sharing-open-source の sign-in・profiles-and-sessions・
+    ///    token-reference・models-and-inference・errors-and-recovery・preview-limitations）に書いてある事だけを厳しく見る。
+    ///    説明書に無い所は OAuth の決まり（RFC 6749・7636・7009・8707）の形にそろえる（例＝token の口の断りの JSON）。
+    /// ⭐ authorize は、テストがブラウザの代わりに GET する。決まりに合えば redirect_uri へ 302 で戻す。
+    ///    合わない頼みは 400 の頁を返して戻さない（本物の画面の出し方は説明書に無い＝テストが 302 でない事で気づく）。
+    /// ⭐ 断った訳は <see cref="Refusals"/> に「口: 印: 訳」で残す（テストが中身を確かめる）。届いた頼みも全部覚える。
     /// </para>
     /// </summary>
-    internal sealed class FakeOpenAi : IDisposable
+    internal sealed partial class FakeOpenAi : IDisposable
     {
+        internal const string DynamicClientId = "dynamic_agent_client";
         internal const string IssuedClientId = "oaiapp_test_client";
         internal const string FullScope = "openid profile email offline_access resource.invoke chatgpt.tokens.use.direct";
+        internal const string PlanScope = "chatgpt.tokens.use.direct";
+        internal const string Resource = "https://api.openai.com/v1";
+
+        private static readonly Regex CodeChallengeShape = new Regex("^[A-Za-z0-9_-]{43}$");
 
         private readonly HttpListener listener = new HttpListener();
         private readonly RSA rsa = RSA.Create();
         private readonly object gate = new object();
-        private string lastNonce;
-        private int refreshCount;
+        private bool registered;
 
         public FakeOpenAi()
         {
@@ -46,14 +55,33 @@ namespace Monster.Balloon.AutomataSystem.ChatGpt.Tests
         public string Base { get; }
 
         // 戻りの作り方を変えるつまみ。
+
+        /// <summary>初回の登録の戻りに、発行した client_id を付けるか（付けないと登録は済まない）。</summary>
         public bool ReturnClientId = true;
+
+        /// <summary>2 回目以降（発行済みの client_id）の戻りにも client_id を付けるか。説明書は「付かないことがある」＝既定は付けない。</summary>
+        public bool ReauthReturnsClientId;
+
+        /// <summary>2 回目以降の戻りに付ける、別の client_id（受け取る側が断るかを見る）。</summary>
+        public string ReauthClientIdOverride;
+
         public string CallbackStateOverride;
         public string CallbackError;
+        public string CallbackErrorDescription;
         public string IdTokenNonceOverride;
         public string GrantedScope = FullScope;
         public long ExpiresIn = 3600;
 
-        /// <summary>responses の答え方（何回目か・本文 → 番号・本文）。番号が 200 なら本文は SSE の字。</summary>
+        /// <summary>code の期限（説明書に値は無い＝OAuth の勧めの 10 分）。0 以下なら発行した時から切れている。</summary>
+        public TimeSpan CodeLifetime = TimeSpan.FromMinutes(10);
+
+        /// <summary>false なら /v1/responses が 403 subscription_sharing_user_not_eligible を返す。</summary>
+        public bool PlanEligible = true;
+
+        /// <summary>true なら /v1/responses が 429 subscription_sharing_usage_limit_exceeded を返す。</summary>
+        public bool UsageLimitReached;
+
+        /// <summary>responses の答え方（何回目か・本文 → 番号・本文）。番号が 200 なら本文は SSE の字。決まりの確かめを通った頼みだけが来る。</summary>
         public Func<int, JObject, (int Status, string Body)> Responses;
 
         // 届いた頼み。
@@ -62,6 +90,9 @@ namespace Monster.Balloon.AutomataSystem.ChatGpt.Tests
         public readonly List<Dictionary<string, string>> RevokeForms = new List<Dictionary<string, string>>();
         public readonly List<JObject> ResponseBodies = new List<JObject>();
         public readonly List<NameValueCollection> ResponseHeaders = new List<NameValueCollection>();
+
+        /// <summary>断った頼み（「口: 印: 訳」）。</summary>
+        public readonly List<string> Refusals = new List<string>();
 
         public ChatGptSettings Settings(string storage)
         {
@@ -152,33 +183,16 @@ namespace Monster.Balloon.AutomataSystem.ChatGpt.Tests
                     this.Authorize(c);
                     return;
                 case "/api/accounts/oauth/token":
-                    this.Token(c, Form(body));
+                    this.Token(c, body);
                     return;
                 case "/api/accounts/oauth/revoke":
-                    lock (this.gate) this.RevokeForms.Add(Form(body));
-                    Write(c.Response, 200, "application/json", string.Empty);
+                    this.Revoke(c, body);
                     return;
                 case "/v1/models":
-                    WriteJson(c.Response, 200, new JObject
-                    {
-                        ["models"] = new JArray(
-                            new JObject { ["slug"] = "model-a", ["display_name"] = "Model A", ["visibility"] = "list" },
-                            new JObject { ["slug"] = "model-hidden", ["display_name"] = "Hidden", ["visibility"] = "hide" },
-                            new JObject { ["slug"] = "model-b", ["display_name"] = "Model B", ["visibility"] = "list" }),
-                    });
+                    this.Models(c);
                     return;
                 case "/v1/responses":
-                    int index;
-                    JObject request = JObject.Parse(body);
-                    lock (this.gate)
-                    {
-                        index = this.ResponseBodies.Count;
-                        this.ResponseBodies.Add(request);
-                        this.ResponseHeaders.Add(new NameValueCollection(c.Request.Headers));
-                    }
-
-                    (int status, string text) = this.Responses(index, request);
-                    Write(c.Response, status, status == 200 ? "text/event-stream" : "application/json", text);
+                    this.ResponsesCall(c, body);
                     return;
                 default:
                     Write(c.Response, 404, "text/plain", "not found");
@@ -186,25 +200,57 @@ namespace Monster.Balloon.AutomataSystem.ChatGpt.Tests
             }
         }
 
+        // authorize の決まり（sign-in の「Start authorization」）。合えば redirect_uri へ 302 で戻す。
         private void Authorize(HttpListenerContext c)
         {
+            NameValueCollection raw = c.Request.QueryString;
             var q = new Dictionary<string, string>();
-            foreach (string k in c.Request.QueryString.AllKeys) q[k] = c.Request.QueryString[k];
-            lock (this.gate)
+            foreach (string k in raw.AllKeys)
             {
-                this.AuthorizeQueries.Add(q);
-                this.lastNonce = q["nonce"];
+                if (k != null) q[k] = raw[k];
             }
 
+            lock (this.gate) this.AuthorizeQueries.Add(q);
+
+            string why = this.AuthorizeProblem(c.Request.HttpMethod, raw, q);
+            if (why != null)
+            {
+                this.Refuse("authorize", "invalid_request", why);
+                Write(c.Response, 400, "text/plain", "invalid_request: " + why);
+                return;
+            }
+
+            bool registering = q["client_id"] == DynamicClientId;
             var back = new List<string>();
             if (this.CallbackError != null)
             {
                 back.Add("error=" + Uri.EscapeDataString(this.CallbackError));
+                if (this.CallbackErrorDescription != null) back.Add("error_description=" + Uri.EscapeDataString(this.CallbackErrorDescription));
             }
             else
             {
-                back.Add("code=code-" + this.AuthorizeQueries.Count);
-                if (this.ReturnClientId) back.Add("client_id=" + IssuedClientId);
+                string code = "code-" + ChatGptWire.RandomToken(16);
+                lock (this.gate)
+                {
+                    if (registering && this.ReturnClientId) this.registered = true;
+                    this.codes[code] = new CodeGrant
+                    {
+                        ClientId = IssuedClientId,
+                        RedirectUri = q["redirect_uri"],
+                        Challenge = q["code_challenge"],
+                        Nonce = q["nonce"],
+                        Resource = q["resource"],
+                        Scope = this.GrantedScope,
+                        ExpiresAt = DateTimeOffset.UtcNow + this.CodeLifetime,
+                    };
+                }
+
+                back.Add("code=" + Uri.EscapeDataString(code));
+                back.Add("scope=" + Uri.EscapeDataString(this.GrantedScope));
+                string issued = registering
+                    ? (this.ReturnClientId ? IssuedClientId : null)
+                    : this.ReauthClientIdOverride ?? (this.ReauthReturnsClientId ? IssuedClientId : null);
+                if (issued != null) back.Add("client_id=" + Uri.EscapeDataString(issued));
             }
 
             back.Add("state=" + Uri.EscapeDataString(this.CallbackStateOverride ?? q["state"]));
@@ -213,58 +259,79 @@ namespace Monster.Balloon.AutomataSystem.ChatGpt.Tests
             c.Response.Close();
         }
 
-        private void Token(HttpListenerContext c, Dictionary<string, string> form)
+        // authorize の頼みが決まりに合わない訳。合えば null。
+        private string AuthorizeProblem(string method, NameValueCollection raw, Dictionary<string, string> q)
         {
-            int n;
-            lock (this.gate)
+            if (method != "GET") return "authorize は GET";
+            string[] required =
             {
-                this.TokenForms.Add(form);
-                n = ++this.refreshCount;
+                "client_id", "response_type", "redirect_uri", "scope", "resource", "state", "nonce",
+                "code_challenge_method", "code_challenge", "ext_agent_host_id",
+            };
+            foreach (string name in required)
+            {
+                if (!q.TryGetValue(name, out string v) || string.IsNullOrEmpty(v)) return name + " が無い";
             }
 
-            var reply = new JObject
+            foreach (string k in raw.AllKeys)
             {
-                ["access_token"] = "access-" + n,
-                ["refresh_token"] = "refresh-" + n,
-                ["token_type"] = "Bearer",
-                ["expires_in"] = this.ExpiresIn,
-            };
-            if (form["grant_type"] == "authorization_code")
-            {
-                reply["scope"] = this.GrantedScope;
-                reply["id_token"] = this.IdToken(form["client_id"], this.IdTokenNonceOverride ?? this.lastNonce);
+                if (k != null && raw.GetValues(k)?.Length > 1) return k + " が 2 つある";
             }
 
-            WriteJson(c.Response, 200, reply);
-        }
-
-        private string IdToken(string audience, string nonce)
-        {
-            var header = new JObject { ["alg"] = "RS256", ["kid"] = "k1", ["typ"] = "JWT" };
-            var payload = new JObject
+            bool registering = q["client_id"] == DynamicClientId;
+            bool known;
+            lock (this.gate) known = this.registered && q["client_id"] == IssuedClientId;
+            if (!registering && !known) return "client_id が dynamic_agent_client でも発行済みの物でもない";
+            if (registering && !q.ContainsKey("agent_name_hint")) return "初回の登録に agent_name_hint が無い";
+            if (!registering && q.ContainsKey("agent_name_hint")) return "発行済みの client_id で agent_name_hint を付けた";
+            if (q["response_type"] != "code") return "response_type が code でない";
+            if (q["code_challenge_method"] != "S256") return "code_challenge_method が S256 でない";
+            if (!CodeChallengeShape.IsMatch(q["code_challenge"])) return "code_challenge が base64url（= 無し）の SHA-256 でない";
+            if (q["resource"] != Resource) return "resource が違う";
+            if (!SameScopes(q["scope"], FullScope)) return "scope が全部そろっていない";
+            if (!LoopbackRedirect(q["redirect_uri"])) return "redirect_uri が http://127.0.0.1:<port>/auth/callback でない";
+            string host = q["ext_agent_host_id"];
+            if (!host.StartsWith("urn:uuid:", StringComparison.Ordinal) && !host.StartsWith("urn:ietf:params:oauth:jwk-thumbprint:", StringComparison.Ordinal))
             {
-                ["iss"] = this.Base,
-                ["aud"] = audience,
-                ["sub"] = "user-sub-1",
-                ["email"] = "player@example.com",
-                ["nonce"] = nonce,
-                ["iat"] = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
-                ["exp"] = DateTimeOffset.UtcNow.ToUnixTimeSeconds() + 3600,
-                ["https://api.openai.com/auth"] = new JObject { ["chatgpt_plan_type"] = "plus" },
-            };
-            string signed = B64(Encoding.UTF8.GetBytes(header.ToString(Formatting.None))) + "." + B64(Encoding.UTF8.GetBytes(payload.ToString(Formatting.None)));
-            byte[] sig = this.rsa.SignData(Encoding.ASCII.GetBytes(signed), HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
-            return signed + "." + B64(sig);
+                return "ext_agent_host_id の形が違う";
+            }
+
+            return null;
         }
 
-        private static Dictionary<string, string> Form(string body)
+        // ループバックの戻り先か（http・127.0.0.1・port は自由・path は /auth/callback・問いの字は無し）。
+        private static bool LoopbackRedirect(string s)
         {
+            if (!Uri.TryCreate(s, UriKind.Absolute, out Uri u)) return false;
+            return u.Scheme == "http" && s.StartsWith("http://127.0.0.1:", StringComparison.Ordinal) && !u.IsDefaultPort &&
+                   u.AbsolutePath == "/auth/callback" && string.IsNullOrEmpty(u.Query) && string.IsNullOrEmpty(u.Fragment);
+        }
+
+        private static bool SameScopes(string a, string b)
+        {
+            var x = new HashSet<string>((a ?? string.Empty).Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries));
+            var y = new HashSet<string>((b ?? string.Empty).Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries));
+            return x.SetEquals(y);
+        }
+
+        private void Refuse(string where, string code, string why)
+        {
+            lock (this.gate) this.Refusals.Add(where + ": " + code + ": " + why);
+        }
+
+        // 頼みの本文（form）を読む。同じ名前が 2 つあれば null の値で印す（呼ぶ側が断る）。
+        private static Dictionary<string, string> Form(string body, out string duplicate)
+        {
+            duplicate = null;
             var result = new Dictionary<string, string>();
             foreach (string pair in body.Split('&'))
             {
                 if (pair.Length == 0) continue;
                 int eq = pair.IndexOf('=');
-                result[Uri.UnescapeDataString(pair.Substring(0, eq).Replace('+', ' '))] = Uri.UnescapeDataString(pair.Substring(eq + 1).Replace('+', ' '));
+                string name = Uri.UnescapeDataString((eq < 0 ? pair : pair.Substring(0, eq)).Replace('+', ' '));
+                string value = eq < 0 ? string.Empty : Uri.UnescapeDataString(pair.Substring(eq + 1).Replace('+', ' '));
+                if (result.ContainsKey(name)) duplicate = name;
+                result[name] = value;
             }
 
             return result;

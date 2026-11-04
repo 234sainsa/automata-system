@@ -144,11 +144,20 @@ namespace Monster.Balloon.AutomataSystem.ChatGpt
                     throw new ChatGptException(ChatGptErrorKind.SignInFailed, "初回の登録で client_id が戻らなかった。", "registration_failed");
                 }
 
+                // 2 回目以降の戻りは client_id が付かないことがある（付かなければ頼んだ物のまま）。
+                // 頼んだ物と違う client_id が付いた戻りは受けない（保存の client_id を他の登録で置き換えない）。
+                if (!registering && issued != null && issued != request.ClientId)
+                {
+                    throw new ChatGptException(ChatGptErrorKind.SignInFailed, "ログインの戻りの client_id が、頼んだ物と違う（交換しない）。", "client_id_mismatch");
+                }
+
                 string clientId = issued ?? request.ClientId;
                 lock (this.gate)
                 {
                     // 発行された client_id は、交換の前に保存する（以後の authorize・交換・refresh・revoke はこれを使う）。
+                    // 初回の案内も、ここで待ちにする（交換が断られて 2 回目の authorize で済んでも、案内は 1 回出る）。
                     this.saved.ClientId = clientId;
+                    if (registering) this.saved.PlanNoticePending = true;
                     this.store.Save(this.saved);
                 }
 
@@ -160,7 +169,7 @@ namespace Monster.Balloon.AutomataSystem.ChatGpt
                 catch (ChatGptException e) when (e.Kind == ChatGptErrorKind.SignInRequired)
                 {
                     // invalid_grant＝この code は捨てる。保存した client_id で authorize からやり直す（呼ぶ側がもう一度ログインを始める）。
-                    throw new ChatGptException(ChatGptErrorKind.SignInFailed, "code の交換が断られた（" + e.Code + "）。ログインをやり直す。", e.Code, httpStatus: e.HttpStatus, inner: e);
+                    throw new ChatGptException(ChatGptErrorKind.SignInFailed, "code の交換が断られた（" + e.Code + "）。ログインをやり直す。 " + e.Message, e.Code, httpStatus: e.HttpStatus, inner: e);
                 }
 
                 ChatGptIdToken.Claims claims = await this.VerifyIdTokenAsync(reply.IdToken, clientId, request.Nonce, cancel).ConfigureAwait(false);
@@ -168,7 +177,6 @@ namespace Monster.Balloon.AutomataSystem.ChatGpt
                 {
                     this.saved.Subject = claims.Subject;
                     this.saved.PlanType = claims.PlanType;
-                    if (registering) this.saved.PlanNoticePending = true;
                     if (this.signInCancel == flowCancel) this.signInCancel = null;
                     this.ApplyTokens(reply);
                     return this.state;

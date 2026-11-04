@@ -47,16 +47,16 @@ AI（たとえば MCP でつないだ Claude）が、動いている Unity の�
 Unity で **Window > Package Manager > + > Add package from git URL...** を開き、次を入れます。
 
 ```
-https://github.com/234sainsa/automata-system.git#v0.2.0
+https://github.com/234sainsa/automata-system.git#v0.2.1
 ```
 
-終わりの `#v0.2.0` で版を決めます。こうすると、`main` が変わっても、あなたのプロジェクトの中身は変わりません。`main` に付いていきたい時は、`#v0.2.0` を外します。
+終わりの `#v0.2.1` で版を決めます。こうすると、`main` が変わっても、あなたのプロジェクトの中身は変わりません。`main` に付いていきたい時は、`#v0.2.1` を外します。
 `Packages/manifest.json` に書いても入ります。
 
 ```json
 {
   "dependencies": {
-    "monster.balloon.automatasystem": "https://github.com/234sainsa/automata-system.git#v0.2.0"
+    "monster.balloon.automatasystem": "https://github.com/234sainsa/automata-system.git#v0.2.1"
   }
 }
 ```
@@ -258,6 +258,9 @@ AI は様子を見てから、掛け金を外します（`reflex/ack`）。赤�
 - `/v1/responses` での会話（流れ・function tools・`store: false`・考える深さは任意）。
 - 失敗は `ChatGptException` で返ります。訳の印は `ChatGptErrorKind`（`UsageLimit`・`NotEligible`・`Unauthorized`・
   `Unavailable`・`Unsupported`・`Interrupted`・`Network`・`Cancelled` など）です。
+
+どこまで確かめたか: 本物の OpenAI では、許可の画面・初回の登録・ループバックの戻りまでを確かめました。トークンの交換から先は、
+OpenAI が公開している決まりどおりに作った偽のサーバー（`Tests/Editor/ChatGpt/`）で確かめました。有料の ChatGPT のプランで試した方の報告を待っています。
 
 ### 使える相手
 

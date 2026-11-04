@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
@@ -14,6 +15,7 @@ namespace Monster.Balloon.AutomataSystem.ChatGpt
     /// ⭐ どのスレッドから呼んでもよい。通信は HttpClient の async で、主スレッドを止めない。
     /// ⭐ <see cref="StateChanged"/> は、様子を変えたスレッドで呼ばれる（主スレッドとは限らない）。
     /// ⭐ refresh は 1 本ずつに並べる。refresh のたびに refresh_token が替わるので、替わった物を必ず保存する。
+    ///    refresh の前に保存のファイルを読み直し、同じフォルダを読む別の口が替えた物があれば、そちらを使う。
     /// ⚠ 保存の場所を設定で決めていなければ、主スレッドで作る（persistentDataPath を読むため）。
     /// </para>
     /// </summary>
@@ -250,6 +252,7 @@ namespace Monster.Balloon.AutomataSystem.ChatGpt
                 lock (this.gate)
                 {
                     if (!this.saved.HasTokens) throw new ChatGptException(ChatGptErrorKind.SignInRequired, "ログインしていない。");
+                    this.AdoptNewerTokensLocked();
                     if (this.saved.AccessToken != stale && !this.RefreshIsDue(DateTimeOffset.UtcNow)) return this.saved.AccessToken;
                     clientId = this.saved.ClientId;
                     refresh = this.saved.RefreshToken;
@@ -278,6 +281,31 @@ namespace Monster.Balloon.AutomataSystem.ChatGpt
             {
                 this.refreshGate.Release();
             }
+        }
+
+        // 同じ保存のファイルを読む別の口（同じフォルダの ChatGptAccount）が先に refresh していれば、その替わった
+        // トークンを使う（gate の中で呼ぶ）。refresh_token は使い捨て＝古い物で refresh すると断られ、ログインが切れる。
+        private void AdoptNewerTokensLocked()
+        {
+            ChatGptSaved disk;
+            try
+            {
+                disk = this.store.TryLoad();
+            }
+            catch (Exception e) when (e is IOException || e is UnauthorizedAccessException)
+            {
+                return; // 読めない時は手元の物で refresh する。
+            }
+
+            if (disk == null || !disk.HasTokens || disk.ClientId != this.saved.ClientId || disk.RefreshToken == this.saved.RefreshToken) return;
+            this.saved.AccessToken = disk.AccessToken;
+            this.saved.RefreshToken = disk.RefreshToken;
+            this.saved.Scope = disk.Scope;
+            this.saved.ExpiresAtUnix = disk.ExpiresAtUnix;
+            this.saved.EarliestRefreshAtUnix = disk.EarliestRefreshAtUnix;
+            this.saved.Subject = disk.Subject;
+            this.saved.PlanType = disk.PlanType;
+            this.SetStateLocked(StateFromSaved(this.saved));
         }
 
         // トークンの返りを中身へ入れて保存し、様子を合わせる（gate の中で呼ぶ）。

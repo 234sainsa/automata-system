@@ -113,6 +113,28 @@ namespace Monster.Balloon.AutomataSystem.ChatGpt.Tests
             Assert.That(headers["OpenAI-Organization"], Is.Null);
             Assert.That(headers["OpenAI-Project"], Is.Null);
             Assert.That(headers["ChatGPT-Account-Id"], Is.Null);
+            Assert.That(headers["Content-Type"], Does.StartWith("application/json"));
+            Assert.That(this.server.Refusals, Is.Empty);
+        }
+
+        /// <summary>
+        /// Test: a 403 not-eligible gives NotEligible with no refresh and no retry.
+        /// 403 の subscription_sharing_user_not_eligible は NotEligible の印。refresh も送り直しもしない（ログインを繰り返さない）。
+        /// </summary>
+        [Test]
+        public void NotEligible403_DoesNotRefreshOrRetry()
+        {
+            this.server.PlanEligible = false;
+            this.server.Responses = (i, body) => (200, TextReply("never"));
+            var session = new ChatGptSession(this.account, "model-a");
+
+            ChatGptException e = Fails(() => session.RunTurnAsync("hi"));
+            Assert.That(e.Kind, Is.EqualTo(ChatGptErrorKind.NotEligible));
+            Assert.That(e.HttpStatus, Is.EqualTo(403));
+            Assert.That(e.NeedsSignIn, Is.False);
+            Assert.That(this.server.ResponseBodies.Count, Is.EqualTo(1));
+            Assert.That(this.server.TokenForms.Count(f => f["grant_type"] == "refresh_token"), Is.EqualTo(0));
+            Assert.That(this.account.State, Is.EqualTo(ChatGptAccountState.SignedIn));
         }
 
         /// <summary>

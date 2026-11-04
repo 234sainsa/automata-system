@@ -2,6 +2,25 @@
 
 All notable changes to this package are written here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.2.1] - 2026-11-04
+
+### Changed
+
+- ChatGPT: before a refresh, `ChatGptAccount` reads the saved sign-in again and uses a refresh token that another
+  `ChatGptAccount` on the same folder has already rotated, instead of sending the old one.
+- ChatGPT: the "You're using your ChatGPT plan" notice is set when the install is registered, so it still shows once when
+  the first code exchange fails and the next sign-in succeeds.
+- The ChatGPT test server now follows OpenAI's published rules strictly: one-time codes with an expiry, PKCE, `redirect_uri`,
+  `resource` and issued client id checks on the code exchange, single-use refresh tokens, revoke, re-auth callbacks without
+  `client_id`, Bearer checks, and the request limits of `/v1/responses`.
+
+### Fixed
+
+- ChatGPT: a re-auth callback that carries a different `client_id` is refused (code `client_id_mismatch`) and the saved
+  client id is kept.
+- ChatGPT: refusals from the token endpoint keep the OAuth `error` code and the `error_description` text in
+  `ChatGptException`, and an `error_description` on the sign-in callback is added to the message.
+
 ## [0.2.0] - 2026-11-04
 
 ### Added

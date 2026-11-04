@@ -196,27 +196,40 @@ namespace Monster.Balloon.AutomataSystem.ChatGpt
         }
 
         // token の口の失敗。OAuth の形（"error":"invalid_grant"）と API の形（"error":{"code":...}）の両方を読む。
-        private static ChatGptException MapTokenError(int status, string body)
+        internal static ChatGptException MapTokenError(int status, string body)
         {
             string code = null;
+            string description = null;
+            bool oauthShape = false;
             try
             {
-                JToken e = JToken.Parse(body)["error"];
-                code = e?.Type == JTokenType.String ? (string)e : e?["code"]?.ToString();
+                JToken doc = JToken.Parse(body);
+                JToken e = doc["error"];
+                oauthShape = e?.Type == JTokenType.String;
+                code = oauthShape ? (string)e : e?["code"]?.ToString();
+                // 断った訳の文（OAuth の error_description か、API の形の error.message）。トークンは入らない。
+                description = doc["error_description"]?.ToString() ?? (e?.Type == JTokenType.Object ? e["message"]?.ToString() : null);
             }
             catch (Exception)
             {
                 // JSON でない返り。番号で選ぶ。
             }
 
+            string because = string.IsNullOrEmpty(description) ? string.Empty : "・" + description;
             if (code != null && SignInAgainCodes.Contains(code))
             {
-                return new ChatGptException(ChatGptErrorKind.SignInRequired, "ログインが切れた（" + code + "）。ログインし直す。", code, httpStatus: status);
+                return new ChatGptException(ChatGptErrorKind.SignInRequired, "ログインが切れた（" + code + because + "）。ログインし直す。", code, httpStatus: status);
             }
 
             if (code == "invalid_client")
             {
-                return new ChatGptException(ChatGptErrorKind.InvalidClient, "client_id が断られた（設定の誤り）。", code, httpStatus: status);
+                return new ChatGptException(ChatGptErrorKind.InvalidClient, "client_id が断られた（設定の誤り" + because + "）。", code, httpStatus: status);
+            }
+
+            // そのほかの OAuth の形の断り（invalid_request・invalid_target など）も、印と訳の文を残す（API の形の読み手では消える）。
+            if (oauthShape && !string.IsNullOrEmpty(code))
+            {
+                return new ChatGptException(ChatGptApiErrors.KindOf(code, status), "HTTP " + status + ": token の口が断った（" + code + because + "）。", code, httpStatus: status);
             }
 
             return ChatGptApiErrors.FromHttp(status, body);

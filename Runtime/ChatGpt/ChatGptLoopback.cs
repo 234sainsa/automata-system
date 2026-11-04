@@ -135,7 +135,11 @@ namespace Monster.Balloon.AutomataSystem.ChatGpt
                 if (error != null || query.ContainsKey("error"))
                 {
                     await RespondAsync(stream, 200, "Sign-in did not complete. You can close this window.").ConfigureAwait(false);
-                    throw new ChatGptException(ChatGptErrorKind.SignInFailed, "ログインが断られた: " + (error ?? "error"), error ?? "error");
+                    // 断った訳の文（OAuth の error_description）があれば字に足す。トークンは入らない。長すぎる物は切る。
+                    string description = ChatGptWire.Single(query, "error_description");
+                    if (description != null && description.Length > 200) description = description.Substring(0, 200);
+                    string because = string.IsNullOrEmpty(description) ? string.Empty : "・" + description;
+                    throw new ChatGptException(ChatGptErrorKind.SignInFailed, "ログインが断られた: " + (error ?? "error") + because, error ?? "error");
                 }
 
                 if (ChatGptWire.Single(query, "code") == null)

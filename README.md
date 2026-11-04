@@ -47,16 +47,16 @@ Other operating systems: the C# code and the bridge use portable APIs, with thes
 In Unity: **Window > Package Manager > + > Add package from git URL...** and enter:
 
 ```
-https://github.com/234sainsa/automata-system.git#v0.2.0
+https://github.com/234sainsa/automata-system.git#v0.2.1
 ```
 
-The `#v0.2.0` part pins the version, so your project does not change when `main` moves. Leave it off to follow `main`.
+The `#v0.2.1` part pins the version, so your project does not change when `main` moves. Leave it off to follow `main`.
 Or add it to `Packages/manifest.json`:
 
 ```json
 {
   "dependencies": {
-    "monster.balloon.automatasystem": "https://github.com/234sainsa/automata-system.git#v0.2.0"
+    "monster.balloon.automatasystem": "https://github.com/234sainsa/automata-system.git#v0.2.1"
   }
 }
 ```
@@ -258,6 +258,10 @@ What it does:
 - Conversations on `/v1/responses` with streaming, function tools, `store: false`, and optional reasoning effort.
 - Errors come back as `ChatGptException` with a `ChatGptErrorKind` (`UsageLimit`, `NotEligible`, `Unauthorized`,
   `Unavailable`, `Unsupported`, `Interrupted`, `Network`, `Cancelled`, ...).
+
+How far it has been tested: with the real OpenAI service, up to the consent page, the first registration and the loopback
+callback. The token exchange and everything after it were tested against a fake server built to follow OpenAI's published
+rules (`Tests/Editor/ChatGpt/`). Reports from anyone who tries it with a paid ChatGPT plan are welcome.
 
 ### Who may use it
 

@@ -90,7 +90,8 @@ namespace Monster.Balloon.AutomataSystem.ChatGpt
             }
         }
 
-        private ChatGptSaved TryLoad()
+        /// <summary>保存を読む。無い・壊れている時は null。</summary>
+        public ChatGptSaved TryLoad()
         {
             if (!File.Exists(this.FilePath)) return null;
             try
