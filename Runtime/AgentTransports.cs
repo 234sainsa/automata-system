@@ -15,17 +15,15 @@ namespace Monster.Balloon.AutomataSystem
         /// <summary>主スレッドの答えを待つ長さ（ふつうの道）。</summary>
         TimeSpan MainThreadTimeout { get; }
 
-        /// <summary>
-        /// この頼みの答えを待つ長さ。越えたら窓口は 503 を返す。
-        /// ふつうの道は <see cref="MainThreadTimeout"/>、長い待ちの道（wait）は、それに頼まれた待ちの長さを足した物。
-        /// </summary>
-        TimeSpan AnswerTimeoutFor(string path, JObject body);
-
         /// <summary>門。頼みを通すか断るかを決める。</summary>
         AgentGateVerdict Check(in AgentGateRequest request);
 
-        /// <summary>門を通った頼みを、主スレッドの列に積む。答えは主スレッドが入れる。</summary>
-        Task<AgentReply> SubmitAsync(string path, AgentFace face, JObject body);
+        /// <summary>
+        /// 門を通った頼みを主スレッドの列に積み、答えを待つ。答えは主スレッドが入れる。
+        /// 待つ長さ（ふつうの道は <see cref="MainThreadTimeout"/>・長い待ちの道 wait はそれに頼まれた待ちを足す）と、
+        /// 待ちきれない時の答え（503 main_thread_busy＝走っていない・504 answer_late＝走った）は Host が決める。
+        /// </summary>
+        Task<AgentReply> AnswerAsync(string path, AgentFace face, JObject body);
     }
 
     /// <summary>

@@ -91,11 +91,13 @@ Examples: `examples/tools.json` (hello and look for the Minimal World sample) an
 | `reflex` | `do`: `arm` (`minutes`, `stopBefore`, `modes`, `ignore`) to `reflex/arm`; `ack` (`resume`) to `reflex/ack`; `pause`, `resume`, `step` (`frames`) to `pause`. |
 | `act` | `do` + `args` + `ref` to `act` (one command); `seq` (up to 8 steps, stops at the first step that is not `done` unless `keepGoing`); `do: "lease"` (with `release`) to `lease`. The bridge adds `by`. A target `args.to` of `{"pos":…}` or `{"id":…}` is sent with the back token. Cancelling a running act releases the hands. |
 | `capture` | `sections`, `measure`, `hideDebugOverlays` (back token) to `capture`; `form` (`portrait`, `landscape`, `both`) resizes the Game view through `back/screen` first and restores it after. |
-| `log` | Reads the game's own log files (back only, no request to the game). Arguments: `tags`, `has`, `after`, `last`, `max`, `waitSec`, `ids`. The folder and the line format come from a plugin's `log_layout`; the default is `<project>/Logs/<yyyyMMdd_HHmmss>[_<n>].log` with no error-line stop. |
+| `log` | Reads the game's own log files (back only; the lines are read from the files, not asked from the game). Arguments: `tags`, `has`, `after`, `last`, `max`, `waitSec`, `ids`. The folder and the line format come from a plugin's `log_layout`; the default is `<project>/Logs/<yyyyMMdd_HHmmss>[_<n>].log` with no error-line stop. While it reads or waits, the bridge sends one `hello` every 20 s at most, so the game keeps its signal sources and the Editor recording on. |
 
-Retries: when the game refuses before running a call with `world_not_ready` (up to 60 s) or `too_soon` (up to 3 s),
-the bridge waits and sends again. `main_thread_busy` (up to 10 s) is retried only for read-only routes
-(`hello`, `look`, `events`, `wait`, `back/look`, `back/entity`, `back/events`, `back/wait`). The answer then carries `bridgeRetried`.
+Retries: when the game refuses before running a call with `world_not_ready` (up to 60 s), `too_soon` (up to 3 s) or
+`main_thread_busy` (up to 10 s; the game withdrew the call before the main thread took it), the bridge waits and sends again.
+`504 answer_late` (the main thread took the call but the answer came too late, so the call ran or is still running) is retried
+only for read-only routes (`hello`, `look`, `events`, `wait`, `back/look`, `back/entity`, `back/events`, `back/wait`).
+The answer then carries `bridgeRetried`.
 
 ## Plugins
 

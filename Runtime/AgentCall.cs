@@ -1,3 +1,4 @@
+using System.Threading;
 using System.Threading.Tasks;
 using Newtonsoft.Json.Linq;
 
@@ -9,6 +10,13 @@ namespace Monster.Balloon.AutomataSystem
     /// </summary>
     public sealed class AgentCall
     {
+        // 頼みの段（窓口のスレッドと主スレッドが奪い合う＝Interlocked で 1 度だけ決める）。
+        private const int Queued = 0;
+        private const int Taken = 1;
+        private const int Withdrawn = 2;
+
+        private int stage;
+
         internal AgentCall(string path, AgentFace face, JObject body)
         {
             this.Path = path;
@@ -41,5 +49,15 @@ namespace Monster.Balloon.AutomataSystem
 
         /// <summary>答えを持ち越した道が、次のフレームまで置いておく控え（主スレッドだけが触る）。</summary>
         internal object State { get; set; }
+
+        /// <summary>
+        /// 主スレッドが、列から出した頼みを受け取る。窓口が先に下げていた時は false＝走らせない。
+        /// </summary>
+        internal bool TryTake() => Interlocked.CompareExchange(ref this.stage, Taken, Queued) == Queued;
+
+        /// <summary>
+        /// 窓口が、答えを待ちきれなかった頼みを下げる。主スレッドが先に受け取っていた時は false＝頼みは走った（まだ走っている）。
+        /// </summary>
+        internal bool TryWithdraw() => Interlocked.CompareExchange(ref this.stage, Withdrawn, Queued) == Queued;
     }
 }

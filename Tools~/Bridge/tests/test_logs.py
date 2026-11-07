@@ -33,12 +33,19 @@ def run(root, port):
     body = json.loads(tool_text(r)) if r else {}
     end = len("10:00:03.000 [ ] [Faint] B は気を失った\n".encode("utf-8"))
     check("agent_back_log: しおり無しは今の Play（同じ日時の頭のファイル）の終わりの行と、書きかけの行の頭のしおり",
-          r and r["result"]["isError"] is False and len(received) == before
+          r and r["result"]["isError"] is False
           and body.get("lines") == ["10:00:00.000 [ ] [Faint] A は気を失った", "10:00:02.000 [ ] [Shelf] 剣を置いた",
                                     "10:00:03.000 [ ] [Faint] B は気を失った"]
           and body.get("cursor") == "20261010_100000_1.log@%d" % end, str(body)[:400])
+    # ログは橋がファイルから読む。窓口へは「使う側はまだいる」の hello（表）だけを、20 秒に 1 本まで送る。
+    touched = [x[:2] for x in received[before:]]
+    check("agent_back_log: 窓口へ送るのは hello（表）1 本だけ（ログの中身は窓口へ聞かない）",
+          touched == [("hello", "surface")], str(touched))
     third = len("10:00:00.000 [ ] [Faint] A は気を失った\n10:00:01.000 [ ] [Noise] x\n".encode("utf-8"))
+    before = len(received)
     r = c.request(101, "tools/call", {"name": "agent_back_log", "arguments": {"tags": ["[Faint]", "[Shelf]"], "ids": True}})
+    check("agent_back_log: 前の hello から 20 秒たたない内は、窓口へ何も送らない", len(received) == before,
+          str(received[before:])[:300])
     body = json.loads(tool_text(r)) if r else {}
     check("agent_back_log: ids:true で、行ごとの証拠の ID（log:<ファイル>@<行の頭のバイトの位置>）",
           body.get("ids") == ["log:20261010_100000.log@0", "log:20261010_100000.log@%d" % third, "log:20261010_100000_1.log@0"],

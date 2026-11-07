@@ -279,6 +279,9 @@ class LogReader:
             return wire.tool_text({"ok": False, "error": {"code": "no_log", "hint": "/".join(layout.folder)}}, True)
         needles = [t.encode("utf-8") for t in tags]
         also = has.encode("utf-8") if has else None
+        # ⭐ ログを読む間も、窓口に「使う側はまだいる」と知らせる（20 秒に 1 本の hello・Link.touch）。
+        #    窓口へ行かない道具だけが続くと、60 秒で合図の元が外れ、録画が閉じていた。
+        self.link.touch(found)
         if after is None and wait_sec == 0:
             lines, ids, cursor, cut = log_tail(layout, folder, names, needles, also, last)
             reply = {"ok": True, "lines": lines, "ids": ids, "cursor": cursor}
@@ -315,6 +318,7 @@ class LogReader:
                 break
             if self.calls.is_cancelled(request_id):
                 break
+            self.link.touch(found)
             time.sleep(LOG_POLL_SEC)
             names = live_logs(layout, folder)
         reply = {"ok": True, "lines": lines, "ids": ids, "cursor": cursor, "more": more}

@@ -18,11 +18,20 @@ SESSION_HEADER = "X-Claude-Session"
 
 # 窓口が頼みを走らせる前に断った時、橋の中で待って打ち直す断りと、待つ上限の秒・読み直す間（2026-10-19）。
 # 訳＝確かめ係は、断りを読むと次の手で打ち直す＝そのたびに文脈（約 20 万）を全部読み直す。
-# world_not_ready（世界を作っている最中）と too_soon（撮るのが速すぎる）は、どの道でも頼みは走っていない。
-RETRY_LIMIT_SEC = {"world_not_ready": 60, "main_thread_busy": 10, "too_soon": 3}
-RETRY_POLL_SEC = {"world_not_ready": 1.0, "main_thread_busy": 0.5, "too_soon": 0.6}
-# ⚠ main_thread_busy の後も、窓口は頼みを走らせる＝打ち直すと 2 回走る。そのため、読むだけの道でだけ打ち直す。
-BUSY_RETRY_ROUTES = ("hello", "look", "events", "wait", "back/look", "back/entity", "back/events", "back/wait")
+# world_not_ready（世界を作っている最中）・too_soon（撮るのが速すぎる）・main_thread_busy（主スレッドが受け取る前に、
+# 窓口が頼みを列から下げた）は、どの道でも頼みは走っていない。
+RETRY_LIMIT_SEC = {"world_not_ready": 60, "main_thread_busy": 10, "too_soon": 3, "answer_late": 10}
+RETRY_POLL_SEC = {"world_not_ready": 1.0, "main_thread_busy": 0.5, "too_soon": 0.6, "answer_late": 0.5}
+# 断りの番号（answer_late だけ 504）。
+RETRY_STATUSES = (429, 503, 504)
+# ⚠ answer_late（504）は、主スレッドが受け取った後に答えが遅れた＝頼みは走った（まだ走っている）。
+#   打ち直すと 2 回走るので、読むだけの道でだけ打ち直す。
+LATE_RETRY_ROUTES = ("hello", "look", "events", "wait", "back/look", "back/entity", "back/events", "back/wait")
+# 橋が窓口へ何も送らない間（ss_back_log がログのファイルを読んで待つ間など）に、hello を 1 本送って
+# 「使う側はまだいる」と知らせる間の秒。訳＝窓口は、頼みが 60 秒来ないと合図の元を外し、
+# Editor の録画を閉じる。ログを読む道具は窓口へ行かないので、長く待つと録画が途中で切れていた。
+TOUCH_EVERY_SEC = 20
+TOUCH_TIMEOUT_SEC = 3
 # Play に入ったばかり（ゲームの差し込みが play_starting で言う）なら、つなぎ先が無くても窓口が開くのを待つ秒。
 PLAY_START_WAIT_SEC = 60
 # 窓口が「このロックを持っていない」と断る時の code（ゲームの頼みの確かめ IAgentRequestGuard が返す断り）。
@@ -95,6 +104,16 @@ class Link:
         self.endpoint_file = endpoint_file
         self.hooks = hooks
         self.is_cancelled = is_cancelled
+        # 最後に窓口が頼みを受けた時刻（time.monotonic・touch が見る）。
+        self.last_sent_at = 0.0
+
+    def touch(self, found):
+        """前に窓口へ送ってから TOUCH_EVERY_SEC 秒たっていれば、hello を 1 本送る（答えは見ない）。
+        hello は世界を読まない道＝世界も、裏を読んだ数も変えない。"""
+        if not found or time.monotonic() - self.last_sent_at < TOUCH_EVERY_SEC:
+            return
+        self.last_sent_at = time.monotonic()
+        self.post_first(found, "hello", {}, "surface", TOUCH_TIMEOUT_SEC)
 
     def endpoints(self):
         """読めたつなぎ先を新しい順に返す。((中身, 道) の並び, 見た道の並び)。"""
@@ -142,6 +161,8 @@ class Link:
                 failure = {"ok": False, "error": {"code": "no_back_token", "hint": "this_build_has_no_back_face"}}
                 break
             status, text = post(endpoint, route, body, token, timeout, session=self.session_for(path))
+            if status is not None:
+                self.last_sent_at = time.monotonic()
             if status == 403 and lock_refusal(text):
                 # その Editor のロックは別のセッションかユーザーの物＝窓口が断った。次のつなぎ先を試す（無ければこの断りを返す）。
                 refused = (status, text)
@@ -160,7 +181,7 @@ class Link:
 
     def post_retry(self, request_id, found, route, args, face, timeout):
         """post_first と同じ。ただし、窓口が頼みを走らせる前に断った時（RETRY_LIMIT_SEC の断り）は、橋の中で待って打ち直す。
-        main_thread_busy は、読むだけの道（BUSY_RETRY_ROUTES）でだけ打ち直す。使う側が取り消したら、次を打たない。
+        answer_late は、読むだけの道（LATE_RETRY_ROUTES）でだけ打ち直す。使う側が取り消したら、次を打たない。
         打ち直した時は、答えの JSON に bridgeRetried（code＝最後の断り・n＝打ち直した数・waitedSec）を足す。
         ⭐ 上限の秒は、最初の断りが来た時から数える（送る前から数えると、長い wait の後の断りを 1 回も打ち直さない）。"""
         start = time.monotonic()
@@ -168,8 +189,8 @@ class Link:
         tries, last_code = 0, None
         while True:
             status, text = self.post_first(found, route, args, face, timeout)
-            code = wire.error_code(wire.json_or_empty(text)) if status in (429, 503) else None
-            if code == "main_thread_busy" and route not in BUSY_RETRY_ROUTES:
+            code = wire.error_code(wire.json_or_empty(text)) if status in RETRY_STATUSES else None
+            if code == "answer_late" and route not in LATE_RETRY_ROUTES:
                 code = None
             if code not in RETRY_LIMIT_SEC:
                 break

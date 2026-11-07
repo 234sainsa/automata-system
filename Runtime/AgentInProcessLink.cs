@@ -45,31 +45,22 @@ namespace Monster.Balloon.AutomataSystem
         /// <summary>
         /// Sends one request and waits for the reply.
         /// 道へ頼みを 1 本積み、答えを待つ。どのスレッドから呼んでもよい。
-        /// ⭐ 待つ長さは HTTP の窓口と同じ（ふつうの道は 5 秒・wait は頼んだ秒を足す）。越えたら 503 main_thread_busy（窓口と同じ字）。
+        /// ⭐ 待つ長さと、待ちきれない時の答えは HTTP の窓口と同じ（ふつうの道は 5 秒・wait は頼んだ秒を足す）。
+        ///    越えた時、主スレッドがまだ受け取っていなければ 503 main_thread_busy（頼みは下げた＝走らない）、
+        ///    受け取った後なら 504 answer_late（頼みは走った・まだ走っている＝打ち直すと 2 回走る）。
         /// ⚠ 渡した body は、積んだ後に変えない（主スレッドが読む）。
         /// </summary>
         /// <param name="route">"/v1/" の後ろ（例 "look"・"wait"）。</param>
         /// <param name="body">頼みの本文（null は中身の無いオブジェクト）。</param>
-        public async Task<AgentReply> SubmitAsync(string route, JObject body)
+        public Task<AgentReply> SubmitAsync(string route, JObject body)
         {
             if (!this.IsAlive)
             {
-                return AgentReplies.Error(503, "closing", "reopen_after_play");
+                return Task.FromResult(AgentReplies.Error(503, "closing", "reopen_after_play"));
             }
 
             string path = AgentGate.RoutePrefix + (route ?? string.Empty);
-            JObject json = body ?? new JObject();
-
-            // ⭐ 待つ長さは、列に積む前に聞く（積んだ後は、主スレッドが本文を読み始めるため）。HTTP の窓口と同じ順。
-            TimeSpan timeout = this.session.AnswerTimeoutFor(path, json);
-            Task<AgentReply> answer = this.session.SubmitAsync(path, AgentFace.Surface, json);
-            Task finished = await Task.WhenAny(answer, Task.Delay(timeout)).ConfigureAwait(false);
-            if (finished != answer)
-            {
-                return AgentReplies.Error(503, "main_thread_busy", "retry");
-            }
-
-            return answer.Result;
+            return this.session.AnswerAsync(path, AgentFace.Surface, body);
         }
 
         /// <summary>

@@ -237,19 +237,8 @@ namespace Monster.Balloon.AutomataSystem.Http
                 return;
             }
 
-            // ── 主スレッドの答えを待つ（長い待ちの道 wait は、頼まれた待ちの分だけ長く待つ）──
-            // ⭐ 待つ長さは、列に積む前に聞く（積んだ後は、主スレッドが本文を読み始めるため）。
-            TimeSpan timeout = this.door.AnswerTimeoutFor(head.Path, json);
-            Task<AgentReply> answer = this.door.SubmitAsync(head.Path, verdict.Face, json);
-            Task finished = await Task.WhenAny(answer, Task.Delay(timeout)).ConfigureAwait(false);
-            if (finished != answer)
-            {
-                // 主スレッドが決まった秒数さばけなかった（読み込み中の長いフレームなど）。使う側はやり直せばよい。
-                Write(stream, 503, AgentReplies.ErrorJson("main_thread_busy", "retry"));
-                return;
-            }
-
-            AgentReply reply = answer.Result;
+            // ── 主スレッドの答えを待つ（待つ長さと、待ちきれない時の答えは Host が決める＝中の口と同じ）──
+            AgentReply reply = await this.door.AnswerAsync(head.Path, verdict.Face, json).ConfigureAwait(false);
             Write(stream, reply.Status, reply.Json);
         }
 

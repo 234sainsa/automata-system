@@ -160,7 +160,8 @@ def run(root, port):
           r and r["result"]["isError"] is False and received[-1][:2] == ("back/shot", "back")
           and json.loads(received[-1][2]) == {"at": "キャラ-1", "dist": 2.5}, "%s %s" % (str(r)[:200], received[-1][:3]))
 
-    # 10-19: 窓口が頼みを走らせる前に断った時は、橋の中で待って打ち直す（main_thread_busy は読むだけの道だけ）。
+    # 10-19: 窓口が頼みを走らせる前に断った時は、橋の中で待って打ち直す。
+    # main_thread_busy は窓口が頼みを下げた＝どの道でも打ち直す。answer_late（走った後の遅れ）は読むだけの道だけ。
     def refused_then(name, args, refusals):
         FAKE_REFUSE[:] = refusals
         before = len(received)
@@ -172,8 +173,16 @@ def run(root, port):
           r and r["result"]["isError"] is False and sent == 3 and body.get("ok") is True
           and body.get("bridgeRetried", {}).get("n") == 2 and body["bridgeRetried"]["code"] == "main_thread_busy", "%s %d" % (body, sent))
     r, body, sent = refused_then("agent_back_command", {"line": "/time noon"}, [("back/command", 503, "main_thread_busy")])
-    check("agent_back_command: main_thread_busy は打ち直さない（窓口は後で走らせる＝2 回走る）",
+    check("agent_back_command: main_thread_busy は打ち直す（窓口が頼みを下げた＝走っていない）",
+          r and r["result"]["isError"] is False and sent == 2 and body.get("bridgeRetried", {}).get("code") == "main_thread_busy",
+          "%s %d" % (body, sent))
+    r, body, sent = refused_then("agent_back_command", {"line": "/time noon"}, [("back/command", 504, "answer_late")])
+    check("agent_back_command: answer_late は打ち直さない（頼みは走った＝打ち直すと 2 回走る）",
           r and r["result"]["isError"] is True and sent == 1 and "bridgeRetried" not in body, "%s %d" % (body, sent))
+    r, body, sent = refused_then("agent_look", {}, [("look", 504, "answer_late")])
+    check("agent_look: answer_late は読むだけの道なので打ち直す",
+          r and r["result"]["isError"] is False and sent == 2 and body.get("bridgeRetried", {}).get("code") == "answer_late",
+          "%s %d" % (body, sent))
     r, body, sent = refused_then("agent_back_command", {"line": "/time noon"}, [("back/command", 503, "world_not_ready")])
     check("agent_back_command: world_not_ready は打ち直す（走る前の断り）",
           r and r["result"]["isError"] is False and sent == 2 and body.get("bridgeRetried", {}).get("n") == 1, "%s %d" % (body, sent))

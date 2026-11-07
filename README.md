@@ -47,16 +47,16 @@ Other operating systems: the C# code and the bridge use portable APIs, with thes
 In Unity: **Window > Package Manager > + > Add package from git URL...** and enter:
 
 ```
-https://github.com/234sainsa/automata-system.git#v0.2.1
+https://github.com/234sainsa/automata-system.git#v0.2.2
 ```
 
-The `#v0.2.1` part pins the version, so your project does not change when `main` moves. Leave it off to follow `main`.
+The `#v0.2.2` part pins the version, so your project does not change when `main` moves. Leave it off to follow `main`.
 Or add it to `Packages/manifest.json`:
 
 ```json
 {
   "dependencies": {
-    "monster.balloon.automatasystem": "https://github.com/234sainsa/automata-system.git#v0.2.1"
+    "monster.balloon.automatasystem": "https://github.com/234sainsa/automata-system.git#v0.2.2"
   }
 }
 ```
@@ -182,6 +182,9 @@ Every request passes the gate before it reaches the game:
 - `Host` must be `127.0.0.1:<port>`. Requests with an `Origin` header (browsers) are refused.
 - `Authorization: Bearer <token>`; the token decides the face.
 - A route whose ability is not open is refused with `403 not_open`. A world route while the world is not ready answers `503 world_not_ready`.
+- If the main thread does not answer in time (5 s, plus the wait asked for on `wait`), the answer tells whether the call ran:
+  `503 main_thread_busy` means the call was withdrawn before it ran, so sending it again is safe.
+  `504 answer_late` means the main thread already took it, so it ran or is still running; look before sending it again.
 - A game can add one more check with `AgentRequestGuards.Register(...)` (`IAgentRequestGuard`).
 
 ### Routes (`IAgentRoute`)

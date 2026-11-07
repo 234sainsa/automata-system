@@ -2,6 +2,24 @@
 
 All notable changes to this package are written here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.2.2] - 2026-11-07
+
+### Fixed
+
+- When the main thread does not answer in time, a call that has not started is withdrawn and never runs, and the answer is
+  `503 main_thread_busy` (safe to send again). Before, the call stayed queued and ran later, so a caller that sent it again
+  ran it twice.
+- A call that the main thread already took but answered too late now gets `504 answer_late` (hint
+  `taken_look_before_resend`) instead of `503 main_thread_busy`.
+- Bridge: `log` sends one `hello` every 20 s at most while it reads or waits, so the game does not drop its signal sources
+  and the Editor recording does not stop during long log waits.
+
+### Changed
+
+- Bridge: `main_thread_busy` is retried for every route (the call did not run). `answer_late` is retried only for
+  read-only routes.
+- The HTTP endpoint and `AgentInProcessLink` wait for answers the same way, so both give the same codes.
+
 ## [0.2.1] - 2026-11-04
 
 ### Changed

@@ -13,7 +13,7 @@ namespace Monster.Balloon.AutomataSystem
     /// Play 1 回ぶんの窓口の持ち物（トークン・鍵・列・道の表・合図の帳面）。
     /// <para>
     /// ⭐ 窓口は、作られた時のこの持ち物に積む。だから、古い Play の窓口が生き残っても、新しい Play の列へは積めない。
-    /// ⚠ 窓口のスレッドから呼ばれる口（<see cref="Check"/>・<see cref="AnswerTimeoutFor"/>・<see cref="SubmitAsync"/>）は、Unity の物に触らない。
+    /// ⚠ 窓口のスレッドから呼ばれる口（<see cref="Check"/>・<see cref="AnswerTimeoutFor"/>・<see cref="AnswerAsync"/>）は、Unity の物に触らない。
     /// </para>
     /// </summary>
     internal sealed class AgentHostSession : IAgentFrontDoor
@@ -200,16 +200,47 @@ namespace Monster.Balloon.AutomataSystem
             return AgentHost.MainThreadTimeout;
         }
 
-        public Task<AgentReply> SubmitAsync(string path, AgentFace face, JObject body)
+        /// <summary>
+        /// 門を通った頼みを列に積み、答えを待つ（窓口のスレッドから呼ぶ・HTTP の窓口も中の口もここを通る）。
+        /// ⭐ 決まった長さ（<see cref="AnswerTimeoutFor"/>）で答えが来ない時の答えは 2 つ。
+        ///    - 主スレッドがまだ受け取っていない＝頼みを列から下げて、503 main_thread_busy（走っていない＝打ち直してよい）。
+        ///    - 主スレッドが受け取った後＝504 answer_late（頼みは走った・まだ走っている＝打ち直すと 2 回走る。様子を見てから決める）。
+        ///    前は、どちらも 503 main_thread_busy・hint retry だった。頼みは列に残って後で走ったので、打ち直した世界を作り直す命令が 2 回走った。
+        /// </summary>
+        public async Task<AgentReply> AnswerAsync(string path, AgentFace face, JObject body)
         {
+            JObject json = body ?? new JObject();
+
+            // ⭐ 待つ長さは、列に積む前に聞く（積んだ後は、主スレッドが本文を読み始めるため）。
+            TimeSpan timeout = this.AnswerTimeoutFor(path, json);
+            AgentCall call = this.Enqueue(path, face, json);
+            Task<AgentReply> answer = call.Completion.Task;
+            Task finished = await Task.WhenAny(answer, Task.Delay(timeout)).ConfigureAwait(false);
+            if (finished == answer)
+            {
+                return answer.Result;
+            }
+
+            if (call.TryWithdraw())
+            {
+                return AgentReplies.Error(503, "main_thread_busy", "retry");
+            }
+
+            // 受け取った後に、ちょうど答えが入った時は、その答えを返す。
+            return answer.IsCompleted ? answer.Result : AgentReplies.Error(504, "answer_late", "taken_look_before_resend");
+        }
+
+        private AgentCall Enqueue(string path, AgentFace face, JObject body)
+        {
+            var call = new AgentCall(path, face, body);
             if (this.closed)
             {
-                return Task.FromResult(AgentReplies.Error(503, "closing", "reopen_after_play"));
+                call.Completion.TrySetResult(AgentReplies.Error(503, "closing", "reopen_after_play"));
+                return call;
             }
 
             // ⭐ 使う側が来ている間だけ、Host は世界の合図の元をつなぐ（来なくなって 60 秒で外す）。
             this.Signals.NoteRequest();
-            var call = new AgentCall(path, face, body);
             this.queue.Enqueue(call);
 
             // ⭐ 積んだ後にもう一度見る（閉じる係が列を空にした後に積んだ頼みを、待たせたままにしない）。
@@ -222,7 +253,7 @@ namespace Monster.Balloon.AutomataSystem
                 }
             }
 
-            return call.Completion.Task;
+            return call;
         }
 
         /// <summary>
@@ -305,6 +336,12 @@ namespace Monster.Balloon.AutomataSystem
                 if (!this.queue.TryDequeue(out AgentCall call))
                 {
                     return;
+                }
+
+                // ⭐ 窓口が答えを待ちきれずに下げた頼みは走らせない（使う側には「走っていない」と答えた）。
+                if (!call.TryTake())
+                {
+                    continue;
                 }
 
                 // ⭐ 数えるのは列から初めて出した時だけ（長い待ちの頼みを、預かったフレームごとに数え直さない）。
