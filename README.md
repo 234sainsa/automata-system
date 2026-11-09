@@ -47,16 +47,16 @@ Other operating systems: the C# code and the bridge use portable APIs, with thes
 In Unity: **Window > Package Manager > + > Add package from git URL...** and enter:
 
 ```
-https://github.com/234sainsa/automata-system.git#v0.2.2
+https://github.com/234sainsa/automata-system.git#v0.2.3
 ```
 
-The `#v0.2.2` part pins the version, so your project does not change when `main` moves. Leave it off to follow `main`.
+The `#v0.2.3` part pins the version, so your project does not change when `main` moves. Leave it off to follow `main`.
 Or add it to `Packages/manifest.json`:
 
 ```json
 {
   "dependencies": {
-    "monster.balloon.automatasystem": "https://github.com/234sainsa/automata-system.git#v0.2.2"
+    "monster.balloon.automatasystem": "https://github.com/234sainsa/automata-system.git#v0.2.3"
   }
 }
 ```
@@ -216,6 +216,9 @@ When a person touches the pad or the keyboard, the hands are released: the perso
 Before long play, the AI arms the stop reflex (`reflex/arm`). When something dangerous happens, the game pauses
 and a latch is set; the AI looks, then acknowledges (`reflex/ack`). Red (error) log lines trip it too, unless the AI asked to ignore them (`ignore`).
 A game adds its own guards and moving reflexes through `IAgentReflexWatch`.
+A moving reflex that runs again and again in normal play (for example, advancing dialogue lines) is named in the optional
+`IAgentRoutineReflexes` on the same watch. Such a reflex is not counted by the `reflex_loop` guard, and it runs only when
+the AI names it in `modes`.
 
 ### Capture (`IAgentCaptureEyes`)
 

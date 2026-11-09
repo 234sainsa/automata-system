@@ -12,6 +12,8 @@ namespace Monster.Balloon.AutomataSystem
     /// ⭐ 走らせるのは、腕の間・腕で選ばれた反射だけ（arm の modes・選ばなければ見張りの全部）。
     ///    掛け金の間・止まっている間・人が触った直後（human_active）は走らせない＝人が先。
     /// ⭐ 同じ反射が 1 分に 3 回動こうとしたら、3 回目は走らせずに、止める守り reflex_loop を働かせる（反射では抜けられない所）。
+    ///    ただし、見張りが <see cref="IAgentRoutineReflexes"/> で「何度も動く」と言う反射（会話の行を送る等）は数えない。
+    ///    その反射は、腕の modes で名指しした時だけ動く（modes を省いた腕では動かない）。
     /// ⭐ 表の合図には、反射の名前・理由の字・命令の番号だけを書く。見張りが読んだ値（HP など）は裏の帳面だけ。
     /// ⚠ 主スレッドで使う。
     /// </para>
@@ -55,8 +57,11 @@ namespace Monster.Balloon.AutomataSystem
         /// <summary>腕で選んだ動く反射の写し（掛け直しで前の選びを続ける時に使う・null＝見張りの全部）。</summary>
         public string[] CopyChosen() => this.chosen == null ? null : (string[])this.chosen.Clone();
 
-        /// <summary>動く反射 <paramref name="mode"/> を、AI が腕で選んでいるか（選びが無ければ全部＝true・腕と見張りは見ない）。</summary>
-        public bool IsChosen(string mode) => this.chosen == null || Array.IndexOf(this.chosen, mode) >= 0;
+        /// <summary>
+        /// 動く反射 <paramref name="mode"/> を、AI が腕で選んでいるか（腕は見ない）。
+        /// 選びが無ければ全部＝true。⚠ ただし何度も動く反射（<see cref="IAgentRoutineReflexes"/>）は、名指しした時だけ true。
+        /// </summary>
+        public bool IsChosen(string mode) => IsChosenFrom(this.chosen, this.reflex.Watching, mode);
 
         /// <summary>動いた回数を忘れる（新しい世界の見張りを始める時）。</summary>
         public void Forget() => this.actTimes.Clear();
@@ -72,7 +77,7 @@ namespace Monster.Balloon.AutomataSystem
 
             foreach (string mode in offered)
             {
-                if (!string.IsNullOrEmpty(mode) && (this.chosen == null || Array.IndexOf(this.chosen, mode) >= 0) && !into.Contains(mode))
+                if (!string.IsNullOrEmpty(mode) && IsChosenFrom(this.chosen, watch, mode) && !into.Contains(mode))
                 {
                     into.Add(mode);
                 }
@@ -93,7 +98,7 @@ namespace Monster.Balloon.AutomataSystem
                 return false;
             }
 
-            return this.chosen == null || Array.IndexOf(this.chosen, mode) >= 0;
+            return IsChosenFrom(this.chosen, this.reflex.Watching, mode);
         }
 
         /// <summary>動く反射が動く（<see cref="IAgentReflexContext.Act"/>）。走らせたら null・走らせなければ理由。</summary>
@@ -139,7 +144,9 @@ namespace Monster.Balloon.AutomataSystem
                 return early;
             }
 
-            if (this.TripIfLooping(mode, why, now))
+            // ⭐ 何度も動く反射（会話の行を送る等）は、1 分に 3 回の数えに入れない。
+            bool routine = IsRoutine(this.reflex.Watching, mode);
+            if (!routine && this.TripIfLooping(mode, why, now))
             {
                 return "loop";
             }
@@ -153,7 +160,7 @@ namespace Monster.Balloon.AutomataSystem
                 hands,
                 actId => this.WriteActed(mode, why, actId, false, backData),
                 out _);
-            if (refused == null)
+            if (refused == null && !routine)
             {
                 this.Count(mode, now);
             }
@@ -170,14 +177,36 @@ namespace Monster.Balloon.AutomataSystem
             }
 
             long now = AgentSignalHub.NowMs();
-            if (this.TripIfLooping(mode, why, now))
+            if (!IsRoutine(this.reflex.Watching, mode))
             {
-                return false;
+                if (this.TripIfLooping(mode, why, now))
+                {
+                    return false;
+                }
+
+                this.Count(mode, now);
             }
 
-            this.Count(mode, now);
             this.WriteActed(mode, why, this.session.Hands.Running?.ActId, true, backData);
             return true;
+        }
+
+        /// <summary>選び <paramref name="chosen"/>（null＝見張りの全部）で、<paramref name="mode"/> が選ばれているか。何度も動く反射は名指しだけ。</summary>
+        private static bool IsChosenFrom(string[] chosen, IAgentReflexWatch watch, string mode)
+        {
+            if (chosen != null)
+            {
+                return Array.IndexOf(chosen, mode) >= 0;
+            }
+
+            return !IsRoutine(watch, mode);
+        }
+
+        /// <summary>見張りが <paramref name="mode"/> を何度も動く反射（<see cref="IAgentRoutineReflexes"/>）と言うか。</summary>
+        private static bool IsRoutine(IAgentReflexWatch watch, string mode)
+        {
+            IReadOnlyList<string> routine = (watch as IAgentRoutineReflexes)?.RoutineModes;
+            return routine != null && Has(routine, mode);
         }
 
         private static bool Has(IReadOnlyList<string> list, string value)

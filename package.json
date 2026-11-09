@@ -1,6 +1,6 @@
 {
   "name": "monster.balloon.automatasystem",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "displayName": "AUTOMATA SYSTEM — Game Agent API for Unity",
   "description": "Lets an AI agent (such as Claude via MCP) read a running Unity game the way a player sees it, and play it with the same inputs. Provides the local endpoint, access gate, event ledger, screen capture and safety reflexes; each game registers its own views and commands through interfaces. Game-agnostic. Optional Sign in with ChatGPT lets an in-game AI use the player's own ChatGPT plan.",
   "unity": "6000.3",

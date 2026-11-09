@@ -2,6 +2,14 @@
 
 All notable changes to this package are written here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.2.3] - 2026-11-09
+
+### Added
+
+- `IAgentRoutineReflexes` (optional, on the reflex watch): names the moving reflexes that run again and again in normal
+  play, such as advancing dialogue lines. The `reflex_loop` guard does not count them, and they run only when `modes`
+  names them (an arm without `modes`, or with `null`, leaves them off).
+
 ## [0.2.2] - 2026-11-07
 
 ### Fixed

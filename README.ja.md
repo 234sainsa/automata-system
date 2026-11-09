@@ -47,16 +47,16 @@ AI（たとえば MCP でつないだ Claude）が、動いている Unity の�
 Unity で **Window > Package Manager > + > Add package from git URL...** を開き、次を入れます。
 
 ```
-https://github.com/234sainsa/automata-system.git#v0.2.1
+https://github.com/234sainsa/automata-system.git#v0.2.3
 ```
 
-終わりの `#v0.2.1` で版を決めます。こうすると、`main` が変わっても、あなたのプロジェクトの中身は変わりません。`main` に付いていきたい時は、`#v0.2.1` を外します。
+終わりの `#v0.2.3` で版を決めます。こうすると、`main` が変わっても、あなたのプロジェクトの中身は変わりません。`main` に付いていきたい時は、`#v0.2.3` を外します。
 `Packages/manifest.json` に書いても入ります。
 
 ```json
 {
   "dependencies": {
-    "monster.balloon.automatasystem": "https://github.com/234sainsa/automata-system.git#v0.2.1"
+    "monster.balloon.automatasystem": "https://github.com/234sainsa/automata-system.git#v0.2.3"
   }
 }
 ```
@@ -213,6 +213,8 @@ AI は手足を借り（`lease`）、遊ぶ人と同じ仮のパッドを押す�
 長く遊ばせる前に、AI は止める反射の腕を掛けます（`reflex/arm`）。危ない事が起きると、ゲームが止まり、掛け金が掛かります。
 AI は様子を見てから、掛け金を外します（`reflex/ack`）。赤のログの行でも止まります（AI が `ignore` で外した時は止まりません）。
 ゲームは、`IAgentReflexWatch` で自分の守りと、動く反射を足します。
+ふつうの遊びの中で何度も動く反射（例＝会話の行を送る）は、同じ見張りに任意の `IAgentRoutineReflexes` を付けて名前を並べます。
+その反射は、守り `reflex_loop` で数えず、AI が `modes` で名指しした時だけ動きます。
 
 ### 撮る（`IAgentCaptureEyes`）
 
